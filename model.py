@@ -37,7 +37,7 @@ class VAESymbolicRegressor(nn.Module):
 
     def generate_from_latent_direct(self, src_enc):
         bs = src_enc.shape[0]
-        num_samples = 10
+        num_samples = self.params.beam_size
         encoded = (
             src_enc.unsqueeze(1)
             .expand((bs, num_samples) + src_enc.shape[1:])
@@ -105,4 +105,3 @@ class VAESymbolicRegressor(nn.Module):
         if return_logvar:
             outputs = (prior_mu, generations, gen_len, prior_logvar)
         return outputs
-

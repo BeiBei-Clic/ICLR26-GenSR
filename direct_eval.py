@@ -211,44 +211,65 @@ if __name__ == "__main__":
                 candidate_trees.append(candidate)
 
         assert candidate_trees
-        predicted_tree = candidate_trees[0]
-        numexpr_fn = env.simplifier.tree_to_numexpr_fn(predicted_tree)
-        y_fit = numexpr_fn(x_to_fit)[:, 0].reshape(-1, 1)
-        y_predict = numexpr_fn(x_to_predict)[:, 0].reshape(-1, 1)
+        unique_candidate_trees = []
+        unique_candidate_infix = set()
+        for candidate_tree in candidate_trees:
+            infix = candidate_tree.infix()
+            if infix not in unique_candidate_infix:
+                unique_candidate_infix.add(infix)
+                unique_candidate_trees.append(candidate_tree)
 
-        results_fit = compute_metrics(
-            {
-                "true": [y_to_fit],
-                "predicted": [y_fit],
-                "predicted_tree": [predicted_tree],
-            },
-            metrics=params.validation_metrics,
-        )
-        results_predict = compute_metrics(
-            {
-                "true": [y_to_predict],
-                "predicted": [y_predict],
-                "predicted_tree": [predicted_tree],
-            },
-            metrics=params.validation_metrics,
-        )
+        best_row = None
+        for candidate_rank, predicted_tree in enumerate(unique_candidate_trees, 1):
+            numexpr_fn = env.simplifier.tree_to_numexpr_fn(predicted_tree)
+            y_fit = numexpr_fn(x_to_fit)[:, 0].reshape(-1, 1)
+            y_predict = numexpr_fn(x_to_predict)[:, 0].reshape(-1, 1)
 
-        row = {
-            "problem": problem_name,
-            "formula": formula,
-            "generated_equation": predicted_tree.infix(),
-            "r2_fit": results_fit["r2"][0],
-            "r2_zero_fit": results_fit["r2_zero"][0],
-            "r2_predict": results_predict["r2"][0],
-            "r2_zero_predict": results_predict["r2_zero"][0],
-            "complexity": len(predicted_tree.prefix().split(",")),
-        }
-        rows.append(row)
-        print("Direct equation: ", row["generated_equation"])
-        print("R2 zero fit: ", row["r2_zero_fit"])
-        print("R2 zero predict: ", row["r2_zero_predict"])
+            results_fit = compute_metrics(
+                {
+                    "true": [y_to_fit],
+                    "predicted": [y_fit],
+                    "predicted_tree": [predicted_tree],
+                },
+                metrics=params.validation_metrics,
+            )
+            results_predict = compute_metrics(
+                {
+                    "true": [y_to_predict],
+                    "predicted": [y_predict],
+                    "predicted_tree": [predicted_tree],
+                },
+                metrics=params.validation_metrics,
+            )
 
-        wandb.log(row, step=counter)
+            row = {
+                "problem": problem_name,
+                "formula": formula,
+                "generated_equation": predicted_tree.infix(),
+                "candidate_rank": candidate_rank,
+                "num_candidates": len(unique_candidate_trees),
+                "r2_fit": results_fit["r2"][0],
+                "r2_zero_fit": results_fit["r2_zero"][0],
+                "r2_predict": results_predict["r2"][0],
+                "r2_zero_predict": results_predict["r2_zero"][0],
+                "complexity": len(predicted_tree.prefix().split(",")),
+            }
+            if best_row is None:
+                best_row = row
+            elif row["r2_zero_fit"] > best_row["r2_zero_fit"]:
+                best_row = row
+            elif row["r2_zero_fit"] == best_row["r2_zero_fit"] and row["r2_fit"] > best_row["r2_fit"]:
+                best_row = row
+            elif row["r2_zero_fit"] == best_row["r2_zero_fit"] and row["r2_fit"] == best_row["r2_fit"] and row["complexity"] < best_row["complexity"]:
+                best_row = row
+
+        rows.append(best_row)
+        print("Direct equation: ", best_row["generated_equation"])
+        print("Selected candidate: ", f'{best_row["candidate_rank"]}/{best_row["num_candidates"]}')
+        print("R2 zero fit: ", best_row["r2_zero_fit"])
+        print("R2 zero predict: ", best_row["r2_zero_predict"])
+
+        wandb.log(best_row, step=counter)
         pbar.update(1)
 
     output_path = "./eval_result/eval_pmlb_direct.csv"
