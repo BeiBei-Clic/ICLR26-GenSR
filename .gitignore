@@ -52,3 +52,4 @@ trash/
 _strip_comments.py
 .claude/
 *logs
+.codex
