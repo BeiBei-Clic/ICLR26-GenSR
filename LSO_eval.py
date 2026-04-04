@@ -146,15 +146,17 @@ def evaluate_pmlb_lso(
 
         pmlb_path = "./datasets/pmlb/datasets/"
 
-        feynman_problems = pd.read_csv(
-            "./datasets/feynman/FeynmanEquations.csv",
-            delimiter=",",)
-        feynman_problems = feynman_problems[["Filename", "Formula"]].dropna().values
         feynman_formulas = {}
-        for p in range(feynman_problems.shape[0]):
-            feynman_formulas[
-                "feynman_" + feynman_problems[p][0].replace(".", "_")
-            ] = feynman_problems[p][1]
+        for metadata_path in Path(pmlb_path).glob("feynman_*/metadata.yaml"):
+            formula = None
+            with open(metadata_path, "r") as f:
+                for line in f:
+                    stripped = line.strip()
+                    if "=" in stripped:
+                        formula = stripped
+                        break
+            if formula is not None:
+                feynman_formulas[metadata_path.parent.name] = formula
         if save:
             save_file = save_suffix
 
@@ -439,12 +441,17 @@ if __name__ == '__main__':
 
     params.local_rank = -1
     params.master_port = -1
-    params.num_workers = 1
     params.random_state = 14423
     params.max_number_bags = 10
     params.eval_verbose_print = True
     params.rescale = True
     params.n_trees_to_refine = params.beam_size
+
+    init_distributed_mode(params)
+    if params.is_slurm_job:
+        init_signal_handler()
+
+    params.num_workers = 1
 
     np.random.seed(params.seed)
     torch.manual_seed(params.seed)
@@ -543,4 +550,3 @@ if __name__ == '__main__':
         )
 
         wandb.finish()
-

@@ -39,6 +39,12 @@ Download the checkpoint from [Google Drive](https://drive.google.com/file/d/1Tbc
 weights/checkpoint.pth
 ```
 
+Or bootstrap it directly inside the repo:
+
+```bash
+bash scripts/bootstrap_pretrained.sh
+```
+
 ### Training
 
 ```bash
