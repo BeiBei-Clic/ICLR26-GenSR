@@ -103,6 +103,42 @@ len(tree.prefix().split(","))
 
 That is, the number of tokens / nodes in the prefix representation of the expression tree. Candidates with complexity larger than `max_complexity` are discarded directly during inference.
 
+You can also batch-run the local PMLB datasets with the same LSO pipeline on GPU:
+
+无噪声 smoke 测试，先快速确认整条批量链路和 CSV 落盘正常。
+
+```bash
+python experiments/pmlb/pmlb_batch_inference.py \
+  --device cuda:0 \
+  --model_path weights/checkpoint.pth \
+  --data_type feynman \
+  --dataset_limit 2 \
+  --max_rows 256 \
+  --max_input_points 128 \
+  --pop_num 20 \
+  --mu_num 4 \
+  --lso_max_iteration 30
+```
+
+默认全量无噪声批量实验，结果写到 `experiments/pmlb/results/`。
+
+```bash
+python experiments/pmlb/pmlb_batch_inference.py \
+  --device cuda:0 \
+  --model_path weights/checkpoint.pth \
+  --data_type feynman
+```
+
+带乘性高斯噪声的批量实验，只额外指定噪声强度即可。
+
+```bash
+python experiments/pmlb/pmlb_batch_inference.py \
+  --device cuda:0 \
+  --model_path weights/checkpoint.pth \
+  --data_type feynman \
+  --noise_strength 0.1
+```
+
 ## Acknowledge
 
 We appreciate the following repos for their valuable code:
