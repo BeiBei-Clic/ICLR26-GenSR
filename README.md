@@ -59,6 +59,50 @@ bash scripts/eval.sh
 
 Change `DATA_TYPE` in the script to evaluate on different SRBench datasets: `feynman`, `strogatz`, or `blackbox`.
 
+You can also run evaluation directly from the command line:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python -u ./direct_eval.py \
+  --reload_model_dir "./weights" \
+  --reload_model "checkpoint.pth" \
+  --eval_lso_on_pmlb True \
+  --pmlb_data_type "feynman" \
+  --target_noise 0.0 \
+  --max_input_points 200 \
+  --lso_optimizer es_fromvae_fit \
+  --beam_size 2 \
+  --model_type vae \
+  --lso_stop_r2 0.95 \
+  --compre_num 128 \
+  --lso_stop_r2_abandon_lower 0 \
+  --feynman_sel_equs_num -1 \
+  --com_weight 400 \
+  --ev_sigma 1.3 \
+  --warmup_iteration 15 \
+  --pop_init_index 0*1*1 \
+  --num_eval_workers 16 \
+  --wandb_project symbolic-regression-example \
+  --wandb_group_name "eval-feynman" \
+  --wandb_run_name "pop80_iter120" \
+  --pop_num 80 \
+  --mu_num 16 \
+  --lso_max_iteration 120
+```
+
+By default, inference uses a hard complexity upper bound of `50`. To override it, add:
+
+```bash
+--max_complexity 40
+```
+
+In this project, complexity is computed as:
+
+```python
+len(tree.prefix().split(","))
+```
+
+That is, the number of tokens / nodes in the prefix representation of the expression tree. Candidates with complexity larger than `max_complexity` are discarded directly during inference.
+
 ## Acknowledge
 
 We appreciate the following repos for their valuable code:

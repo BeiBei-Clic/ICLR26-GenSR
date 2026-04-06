@@ -1,77 +1,27 @@
+import datetime
 import os
-from pathlib import Path
 
 import numpy as np
-import pandas as pd
 import torch
 import wandb
-from sklearn.model_selection import train_test_split
-from tqdm import tqdm
 
 import symbolicregression
-import symbolicregression.model.utils_wrapper as utils_wrapper
-from model import VAESymbolicRegressor
+from LSO_eval import evaluate_pmlb_lso, extract_info
 from parsers import get_parser
 from symbolicregression.envs import build_env
-from symbolicregression.metrics import compute_metrics
 from symbolicregression.model import build_modules
 from symbolicregression.slurm import init_distributed_mode, init_signal_handler
-
-
-def reload_model(modules, path):
-    assert os.path.isfile(path)
-
-    if torch.cuda.is_available():
-        data = torch.load(path, weights_only=False)
-    else:
-        data = torch.load(path, map_location=torch.device("cpu"), weights_only=False)
-
-    for key, module in modules.items():
-        if key not in data:
-            if key == "feature_fusion" and "latent_bridge" in data:
-                weights = data["latent_bridge"]
-            elif key == "feature_fusion" and "mapper" in data:
-                weights = data["mapper"]
-            else:
-                continue
-        else:
-            weights = data[key]
-
-        try:
-            module.load_state_dict(weights, strict=False)
-        except RuntimeError:
-            stripped = {
-                name[len("module."):] if name.startswith("module.") else name: value
-                for name, value in weights.items()
-            }
-            module.load_state_dict(stripped, strict=False)
-
-        for parameter in module.parameters():
-            parameter.requires_grad_(False)
-
-
-def read_file(filename, label="target", sep=None):
-    compression = "gzip" if filename.endswith("gz") else None
-    if sep:
-        input_data = pd.read_csv(filename, sep=sep, compression=compression)
-    else:
-        input_data = pd.read_csv(
-            filename, sep=sep, compression=compression, engine="python"
-        )
-
-    feature_names = [x for x in input_data.columns.values if x != label]
-    feature_names = np.array(feature_names)
-
-    X = input_data.drop(label, axis=1).values.astype(float)
-    y = input_data[label].values
-
-    assert X.shape[1] == feature_names.shape[0]
-    return X, y, feature_names
+from symbolicregression.trainer_vae import Trainer
 
 
 if __name__ == "__main__":
     parser = get_parser()
     params = parser.parse_args()
+
+    use_sample_pop, use_y_noise_pop, use_latent_noise_pop = params.pop_init_index.split("*")
+    params.use_sample_pop = int(use_sample_pop)
+    params.use_y_noise_pop = int(use_y_noise_pop)
+    params.use_latent_noise_pop = int(use_latent_noise_pop)
 
     params.batch_size = 1
     params.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -88,192 +38,99 @@ if __name__ == "__main__":
     params.max_number_bags = 10
     params.eval_verbose_print = True
     params.rescale = True
-    params.num_workers = 1
-    params.eval_only = True
+    params.n_trees_to_refine = params.beam_size
 
     init_distributed_mode(params)
     if params.is_slurm_job:
         init_signal_handler()
 
-    if not params.cpu:
-        assert torch.cuda.is_available()
-        params.device = "cuda"
-    else:
-        params.device = "cpu"
-    symbolicregression.utils.CUDA = not params.cpu
+    params.num_workers = 1
 
     np.random.seed(params.seed)
     torch.manual_seed(params.seed)
     torch.cuda.manual_seed(params.seed)
 
+    if not params.cpu:
+        assert torch.cuda.is_available()
+    params.eval_only = True
+    symbolicregression.utils.CUDA = not params.cpu
+
     env = build_env(params)
     env.rng = np.random.RandomState(0)
-    modules = build_modules(env, params, mode="eval")
-
-    model_path = os.path.join(params.reload_model_dir, params.reload_model)
-    reload_model(modules, model_path)
-    model = VAESymbolicRegressor(params=params, env=env, modules=modules)
-    model.to(params.device)
-    model.eval()
-
-    all_datasets = pd.read_csv("./datasets/pmlb/pmlb/all_summary_stats.tsv", sep="\t")
-    regression_datasets = all_datasets[all_datasets["task"] == "regression"]
-    regression_datasets = regression_datasets[
-        regression_datasets["n_categorical_features"] == 0
-    ]
-
-    if params.pmlb_data_type == "feynman":
-        problems = regression_datasets[regression_datasets["dataset"].str.contains("feynman")]
-    elif params.pmlb_data_type == "strogatz":
-        problems = regression_datasets[regression_datasets["dataset"].str.contains("strogatz")]
+    if params.eval_in_train_mode:
+        modules = build_modules(env, params, mode="train")
     else:
-        problems = regression_datasets[
-            ~(
-                regression_datasets["dataset"].str.contains("strogatz")
-                | regression_datasets["dataset"].str.contains("feynman")
-            )
-        ]
+        modules = build_modules(env, params, mode="eval")
 
-    problems = problems.loc[problems["n_features"] < 11]
-    problem_names = problems["dataset"].values.tolist()
+    trainer = Trainer(modules, env, params)
 
-    if params.feynman_sel_equs_num != -1:
-        problem_names = problem_names[:params.feynman_sel_equs_num]
+    target_noise = params.target_noise
+    random_state = params.random_state
+    data_type = params.pmlb_data_type
+    save = params.save_results
 
-    feynman_formulas = {}
-    pmlb_path = "./datasets/pmlb/datasets/"
-    for metadata_path in Path(pmlb_path).glob("feynman_*/metadata.yaml"):
-        formula = None
-        with open(metadata_path, "r") as f:
-            for line in f:
-                stripped = line.strip()
-                if "=" in stripped:
-                    formula = stripped
-                    break
-        if formula is not None:
-            feynman_formulas[metadata_path.parent.name] = formula
-
-    wandb.init(mode=os.environ.get("WANDB_MODE", "disabled"))
-
-    rng = np.random.RandomState(params.random_state)
-    rows = []
-    pbar = tqdm(total=len(problem_names))
-    for counter, problem_name in enumerate(problem_names, 1):
-        formula = feynman_formulas.get(problem_name, "???")
-        print("Sample: ", counter)
-        print("GT equation : ", formula)
-        print("EQ: ", problem_name)
-
-        X, y, _ = read_file(f"{pmlb_path}{problem_name}/{problem_name}.tsv.gz")
-        y = np.expand_dims(y, -1)
-
-        x_to_fit, x_to_predict, y_to_fit, y_to_predict = train_test_split(
-            X, y, test_size=0.25, shuffle=True, random_state=params.random_state
+    if data_type == "feynman":
+        filter_fn = lambda x: x["dataset"].str.contains("feynman")
+    elif data_type == "strogatz":
+        print("Strogatz data")
+        filter_fn = lambda x: x["dataset"].str.contains("strogatz")
+    else:
+        filter_fn = lambda x: ~(
+            x["dataset"].str.contains("strogatz")
+            | x["dataset"].str.contains("feynman")
         )
 
-        scale = params.target_noise * np.sqrt(np.mean(np.square(y_to_fit)))
-        noise = rng.normal(loc=0.0, scale=scale, size=y_to_fit.shape)
-        y_to_fit += noise
+    group_name = "{}_{}_be{}_it{}_st{}_pn{}_mn{}_s{}_n{}".format(
+        params.lso_optimizer,
+        params.model_type,
+        params.beam_size,
+        params.lso_max_iteration,
+        params.lso_stop_r2,
+        params.pop_num,
+        params.mu_num,
+        params.ev_sigma,
+        params.target_noise,
+    )
 
-        scaler = utils_wrapper.StandardScaler() if params.rescale else None
-        if scaler is not None:
-            X_scaled_to_fit = scaler.fit_transform(x_to_fit)
-            Y_scaled_to_fit = y_to_fit
-        else:
-            X_scaled_to_fit = x_to_fit
-            Y_scaled_to_fit = y_to_fit
+    params.train_info, params.train_period = extract_info(params.reload_model)
 
-        if len(X_scaled_to_fit) >= params.max_input_points:
-            fit_indices = rng.choice(len(X_scaled_to_fit), size=params.max_input_points, replace=False)
-            X_scaled_for_model = X_scaled_to_fit[fit_indices]
-            Y_scaled_for_model = Y_scaled_to_fit[fit_indices]
-        else:
-            X_scaled_for_model = X_scaled_to_fit
-            Y_scaled_for_model = Y_scaled_to_fit
+    current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    wandb_group_name = getattr(params, "wandb_group_name", None) or f"{group_name}"
+    wandb_run_name = getattr(params, "wandb_run_name", None) or f"eval-{params.pmlb_data_type}-seed{params.seed}-{current_time}"
+    wandb_project = getattr(params, "wandb_project", None) or "symbolic-regression-lso"
 
-        sample_to_learn = {
-            "X_scaled_to_fit": [X_scaled_for_model],
-            "Y_scaled_to_fit": [Y_scaled_for_model],
-            "x_to_fit": [x_to_fit],
-            "y_to_fit": [y_to_fit],
-            "x_to_predict": [x_to_predict],
-            "y_to_predict": [y_to_predict],
-            "eq_gt": [formula],
-        }
+    if params.wandb_disabled:
+        wandb.init(mode="disabled")
+    elif getattr(params, "wandb_resume_id", ""):
+        wandb.init(
+            project=wandb_project,
+            id=params.wandb_resume_id,
+            resume="must",
+            config=params,
+        )
+    else:
+        wandb.init(
+            project=wandb_project,
+            name=wandb_run_name,
+            group=wandb_group_name,
+            config=params,
+        )
 
-        with torch.no_grad():
-            _, generations, _ = model(sample_to_learn, params.max_generated_output_len)
+    save_dir = f"./eval_result/noise/res_{wandb_group_name}/{wandb_run_name}.csv"
 
-        candidate_trees = []
-        for generation in generations.cpu().tolist():
-            candidate = env.idx_to_infix(generation[1:-1], is_float=False, str_array=False)
-            if candidate is not None:
-                candidate_trees.append(candidate)
+    if not os.path.exists(os.path.dirname(save_dir)):
+        os.makedirs(os.path.dirname(save_dir), exist_ok=True)
 
-        assert candidate_trees
-        unique_candidate_trees = []
-        unique_candidate_infix = set()
-        for candidate_tree in candidate_trees:
-            infix = candidate_tree.infix()
-            if infix not in unique_candidate_infix:
-                unique_candidate_infix.add(infix)
-                unique_candidate_trees.append(candidate_tree)
+    evaluate_pmlb_lso(
+        trainer,
+        params,
+        target_noise=target_noise,
+        verbose=params.eval_verbose_print,
+        random_state=random_state,
+        save=save,
+        filter_fn=filter_fn,
+        save_file=None,
+        save_suffix=save_dir,
+    )
 
-        best_row = None
-        for candidate_rank, predicted_tree in enumerate(unique_candidate_trees, 1):
-            numexpr_fn = env.simplifier.tree_to_numexpr_fn(predicted_tree)
-            y_fit = numexpr_fn(x_to_fit)[:, 0].reshape(-1, 1)
-            y_predict = numexpr_fn(x_to_predict)[:, 0].reshape(-1, 1)
-
-            results_fit = compute_metrics(
-                {
-                    "true": [y_to_fit],
-                    "predicted": [y_fit],
-                    "predicted_tree": [predicted_tree],
-                },
-                metrics=params.validation_metrics,
-            )
-            results_predict = compute_metrics(
-                {
-                    "true": [y_to_predict],
-                    "predicted": [y_predict],
-                    "predicted_tree": [predicted_tree],
-                },
-                metrics=params.validation_metrics,
-            )
-
-            row = {
-                "problem": problem_name,
-                "formula": formula,
-                "generated_equation": predicted_tree.infix(),
-                "candidate_rank": candidate_rank,
-                "num_candidates": len(unique_candidate_trees),
-                "r2_fit": results_fit["r2"][0],
-                "r2_zero_fit": results_fit["r2_zero"][0],
-                "r2_predict": results_predict["r2"][0],
-                "r2_zero_predict": results_predict["r2_zero"][0],
-                "complexity": len(predicted_tree.prefix().split(",")),
-            }
-            if best_row is None:
-                best_row = row
-            elif row["r2_zero_fit"] > best_row["r2_zero_fit"]:
-                best_row = row
-            elif row["r2_zero_fit"] == best_row["r2_zero_fit"] and row["r2_fit"] > best_row["r2_fit"]:
-                best_row = row
-            elif row["r2_zero_fit"] == best_row["r2_zero_fit"] and row["r2_fit"] == best_row["r2_fit"] and row["complexity"] < best_row["complexity"]:
-                best_row = row
-
-        rows.append(best_row)
-        print("Direct equation: ", best_row["generated_equation"])
-        print("Selected candidate: ", f'{best_row["candidate_rank"]}/{best_row["num_candidates"]}')
-        print("R2 zero fit: ", best_row["r2_zero_fit"])
-        print("R2 zero predict: ", best_row["r2_zero_predict"])
-
-        wandb.log(best_row, step=counter)
-        pbar.update(1)
-
-    output_path = "./eval_result/eval_pmlb_direct.csv"
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    pd.DataFrame(rows).to_csv(output_path, index=False)
-    pbar.close()
     wandb.finish()

@@ -589,6 +589,10 @@ def get_parser():
     )
 
     parser.add_argument(
+        "--max_complexity", type=int, default=50, help="Hard complexity upper bound for inferred expressions (-1 disables)"
+    )
+
+    parser.add_argument(
         "--reverse_hard_probelms", type=int, default=-1, help="Reverse hard problems"
     )
 
@@ -601,4 +605,3 @@ def get_parser():
     )
 
     return parser
-

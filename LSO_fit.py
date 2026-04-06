@@ -132,6 +132,9 @@ def gen2eq(env, params, encoded_y, generations, sample_to_learn, stored_skeleton
 
         complexity = len(tree.prefix().split(','))
 
+        if params.max_complexity != -1 and complexity > params.max_complexity:
+            return False, skeleton_candidate, None, None, None, None, None, None, None, None
+
         results_fit = compute_metrics(
             {
                 "true": [y_gt],
@@ -414,7 +417,7 @@ def lso_fit_es_covfromvae_fit(sample_to_learn, env, params, model,
             feature_dim=pop.shape[1],
             mu=params.mu_num,
             sigma=params.ev_sigma,
-            device='cuda',
+            device=params.device,
             c1_min=params.c1_min,
         )
     else:
@@ -422,7 +425,7 @@ def lso_fit_es_covfromvae_fit(sample_to_learn, env, params, model,
             feature_dim=pop.shape[1],
             mu=params.mu_num,
             sigma=params.ev_sigma,
-            device='cuda',
+            device=params.device,
             c1_min=params.c1_min,
         )
 
@@ -558,6 +561,8 @@ def lso_fit_es_covfromvae_fit(sample_to_learn, env, params, model,
             mse_pred = np.mean((y_pred - y_gt_pred)**2) / (np.mean(y_gt**2) + 1e-10)
 
         complexity = len(global_best['best_eq'].prefix().split(','))
+        if params.max_complexity != -1 and complexity > params.max_complexity:
+            raise ValueError(f"Best equation complexity {complexity} exceeds max_complexity {params.max_complexity}")
 
         results_fit = compute_metrics(
             {
@@ -616,4 +621,3 @@ def lso_fit_es_covfromvae_fit(sample_to_learn, env, params, model,
         _pool.join()
 
     return batch_results
-
