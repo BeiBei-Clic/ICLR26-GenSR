@@ -18,6 +18,7 @@ python experiments/pmlb/pmlb_batch_inference.py \
 - `pop_num 24`、`mu_num 6`，控制每轮搜索宽度，避免时间暴涨
 - `beam_size 1`，减少每个候选的生成开销
 - `max_input_points 128`，进一步压住单数据集成本
+- `max_complexitiy 50`，复杂度限制
 
 如果这组结果还是偏弱，优先继续试：
 
@@ -26,11 +27,10 @@ python experiments/pmlb/pmlb_batch_inference.py \
   --model_path weights/checkpoint.pth \
   --max_rows 200 \
   --max_input_points 200 \
-  --pop_num 24 \
-  --mu_num 6 \
+  --pop_num 15 \
+  --mu_num 2 \
   --beam_size 10 \
   --lso_max_iteration 10 \
-  --max_complexity 50 \
   --device cuda:0 \
   --noise_strength 0
 ```

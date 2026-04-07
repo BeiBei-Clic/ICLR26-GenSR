@@ -44,7 +44,7 @@ if __name__ == "__main__":
         pop_num=80,
         mu_num=16,
         lso_max_iteration=120,
-        max_complexity=50,
+        max_complexity=-1,
         n_trees_to_refine=2,
         max_input_points=200,
         wandb_disabled=True,
