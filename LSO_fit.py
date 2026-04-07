@@ -246,6 +246,8 @@ def lso_fit_es_covfromvae_fit(sample_to_learn, env, params, model,
              mse_fit, mse_pred, results_fit, results_predict) = eq_outputs
 
             if success:
+                if params.max_complexity != -1 and complexity > params.max_complexity:
+                    return {'success': False, 'r2': 0, 'fitness': 0}
                 r2 = results_fit['r2_zero'][0]
                 fitness = calculate_fitness(r2, complexity)
                 skeleton_key = skeleton_candidate.infix()

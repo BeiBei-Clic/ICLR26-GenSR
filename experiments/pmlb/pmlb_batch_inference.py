@@ -49,7 +49,7 @@ if __name__ == "__main__":
         max_input_points=200,
         wandb_disabled=True,
     )
-    parser.add_argument("--datasets_dir", type=str, default="datasets/pmlb/datasets")
+    parser.add_argument("--datasets_dir", type=str, default="pmlb/datasets")
     parser.add_argument("--summary_tsv", type=str, default="datasets/pmlb/pmlb/all_summary_stats.tsv")
     parser.add_argument("--model_path", type=str, default="weights/checkpoint.pth")
     parser.add_argument("--output_csv", type=str, default="")
@@ -58,7 +58,6 @@ if __name__ == "__main__":
     parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--noise_strength", type=float, default=0.0)
     parser.add_argument("--noise_seed", type=int, default=0)
-    parser.add_argument("--data_type", type=str, default="feynman", choices=["feynman", "strogatz", "blackbox"])
     args = parser.parse_args()
 
     if args.noise_strength < 0:
@@ -166,12 +165,6 @@ if __name__ == "__main__":
             metadata_task = summary_task_map.get(dataset_name)
         if metadata_task != "regression":
             continue
-        if args.data_type == "feynman" and "feynman" not in dataset_name:
-            continue
-        if args.data_type == "strogatz" and "strogatz" not in dataset_name:
-            continue
-        if args.data_type == "blackbox" and ("feynman" in dataset_name or "strogatz" in dataset_name):
-            continue
         problem_names.append(dataset_name)
 
     if args.dataset_limit != -1:
@@ -228,6 +221,10 @@ if __name__ == "__main__":
                 if args.max_rows != -1:
                     X = X[:args.max_rows]
                     y = y[:args.max_rows]
+                if X.shape[1] > args.max_input_dimension:
+                    raise ValueError(
+                        f"Input dimension {X.shape[1]} exceeds max_input_dimension {args.max_input_dimension}"
+                    )
                 y = np.expand_dims(y, -1)
 
                 x_to_fit, x_to_predict, y_to_fit, y_to_predict = train_test_split(
