@@ -142,7 +142,7 @@ python experiments/pmlb/pmlb_batch_inference.py \
 汇总不同噪声强度下的 PMLB 结果。
 
 ```bash
-PYTHONPATH=. .venv/bin/python experiments/pmlb/pmlb_results_summary.py --input_csvs experiments/pmlb/results/pmlb_batch_inference_noise_0.csv experiments/pmlb/results/pmlb_batch_inference_noise_0.1.csv --output_csv experiments/pmlb/results/pmlb_results_summary.csv
+PYTHONPATH=. .venv/bin/python experiments/pmlb/pmlb_results_summary.py --input_csvs experiments/pmlb/results/pmlb_batch_inference_noise_0.csv experiments/pmlb/results/pmlb_batch_inference_noise_0.1.csv experiments/pmlb/results/pmlb_batch_inference_noise_0.01.csv experiments/pmlb/results/pmlb_batch_inference_noise_0.001.csv --output_csv experiments/pmlb/results/pmlb_results_summary.csv
 ```
 
 ## Acknowledge
