@@ -214,9 +214,10 @@ if __name__ == "__main__":
     # PDF: f(x) = (2*x/sigma^2) * chi2.pdf(x^2/sigma^2, d)
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.hist(l2_norms, bins=50, density=True, edgecolor="black", alpha=0.75, label="Empirical")
-    x_theory = np.linspace(l2_norms.min(), l2_norms.max(), 300)
-    chi_pdf = (2 * x_theory / sigma_sq) * chi2.pdf(x_theory ** 2 / sigma_sq, df=d)
-    ax.plot(x_theory, chi_pdf, "r-", linewidth=2, label=f"σ·Chi({d}) theoretical (σ={sigma:.3f})")
+    x_max = max(l2_norms.max(), np.sqrt(d) + 3) * 1.1
+    x_theory = np.linspace(0, x_max, 300)
+    chi_pdf = 2 * x_theory * chi2.pdf(x_theory ** 2, df=d)
+    ax.plot(x_theory, chi_pdf, "r-", linewidth=2, label=f"Chi({d}) theoretical (prior N(0,I))")
     mean_val = l2_norms.mean()
     median_val = np.median(l2_norms)
     ax.axvline(mean_val, color="red", linestyle="--", linewidth=1.5, label=f"Mean = {mean_val:.2f}")
