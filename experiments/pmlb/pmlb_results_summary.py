@@ -71,15 +71,16 @@ if __name__ == "__main__":
         groups.loc[dataset_names.str.startswith("feynman_")] = "Feynman"
         groups.loc[dataset_names.str.startswith("strogatz_")] = "Strogatz"
 
-        raw_r2 = pd.to_numeric(df["r2"], errors="coerce")
-        finite_r2_mask = raw_r2.notna() & np.isfinite(raw_r2)
-        clipped_r2 = raw_r2.copy()
-        clipped_r2.loc[~finite_r2_mask] = 0.0
-        clipped_r2.loc[clipped_r2 < 0] = 0.0
-        r2_valid_mask = finite_r2_mask & (raw_r2 >= 0)
-
         status_series = df["status"].astype(str).str.lower()
         success_mask = status_series.isin(["ok", "success"])
+
+        raw_r2 = pd.to_numeric(df["r2"], errors="coerce")
+        finite_r2_mask = raw_r2.notna() & np.isfinite(raw_r2)
+        r2_valid_mask = success_mask & finite_r2_mask & (raw_r2 >= 0)
+        clipped_r2 = raw_r2.copy()
+        clipped_r2.loc[~r2_valid_mask] = np.nan
+        clipped_r2.loc[clipped_r2 < 0] = 0.0
+
         complexity_values = pd.to_numeric(df["complexity"], errors="coerce")
         complexity_mask = success_mask & complexity_values.notna() & np.isfinite(complexity_values)
         seconds_values = pd.to_numeric(df["seconds"], errors="coerce")
@@ -101,6 +102,7 @@ if __name__ == "__main__":
         for group_name in ["Feynman", "Strogatz", "Black-box"]:
             group_df = grouped_df[grouped_df["group"] == group_name]
 
+            valid_r2 = group_df.loc[group_df["r2_valid_mask"], "clipped_r2"]
             valid_complexity = group_df.loc[group_df["complexity_mask"], "complexity_values"]
             valid_seconds = group_df.loc[group_df["seconds_mask"], "seconds_values"]
 
@@ -108,16 +110,16 @@ if __name__ == "__main__":
                 {
                     "noise_strength": noise_strength,
                     "group": group_name,
-                    "r2_mean": float(group_df["clipped_r2"].mean()) if len(group_df) else np.nan,
-                    "r2_var": float(group_df["clipped_r2"].var(ddof=0)) if len(group_df) else np.nan,
+                    "r2_mean": float(valid_r2.mean()) if len(valid_r2) else np.nan,
+                    "r2_std": float(valid_r2.std(ddof=0)) if len(valid_r2) else np.nan,
                     "r2_valid_count": int(group_df["r2_valid_mask"].sum()),
                     "total_count": int(len(group_df)),
-                    "recovery_rate": float((group_df["raw_r2"] > 0.9).sum() / len(group_df)) if len(group_df) else np.nan,
+                    "recovery_rate": float((valid_r2 > 0.9).sum() / len(valid_r2)) if len(valid_r2) else np.nan,
                     "complexity_mean": float(valid_complexity.mean()) if len(valid_complexity) else np.nan,
-                    "complexity_var": float(valid_complexity.var(ddof=0)) if len(valid_complexity) else np.nan,
+                    "complexity_std": float(valid_complexity.std(ddof=0)) if len(valid_complexity) else np.nan,
                     "complexity_count": int(len(valid_complexity)),
                     "seconds_mean": float(valid_seconds.mean()) if len(valid_seconds) else np.nan,
-                    "seconds_var": float(valid_seconds.var(ddof=0)) if len(valid_seconds) else np.nan,
+                    "seconds_std": float(valid_seconds.std(ddof=0)) if len(valid_seconds) else np.nan,
                     "seconds_count": int(len(valid_seconds)),
                 }
             )
@@ -128,15 +130,15 @@ if __name__ == "__main__":
             "noise_strength",
             "group",
             "r2_mean",
-            "r2_var",
+            "r2_std",
             "r2_valid_count",
             "total_count",
             "recovery_rate",
             "complexity_mean",
-            "complexity_var",
+            "complexity_std",
             "complexity_count",
             "seconds_mean",
-            "seconds_var",
+            "seconds_std",
             "seconds_count",
         ],
     )
@@ -148,12 +150,12 @@ if __name__ == "__main__":
     printable_df = summary_df.copy()
     for column in [
         "r2_mean",
-        "r2_var",
+        "r2_std",
         "recovery_rate",
         "complexity_mean",
-        "complexity_var",
+        "complexity_std",
         "seconds_mean",
-        "seconds_var",
+        "seconds_std",
     ]:
         printable_df[column] = printable_df[column].map(lambda value: "nan" if pd.isna(value) else f"{value:.6f}")
 
