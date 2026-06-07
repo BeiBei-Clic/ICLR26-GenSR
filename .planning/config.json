@@ -1,0 +1,14 @@
+{
+  "model_profile": "quality",
+  "auto_commit": true,
+  "workflow_toggles": {
+    "research": true,
+    "discuss": false,
+    "ui_phase": false,
+    "ai_phase": false
+  },
+  "defaults": {
+    "commit_style": "chinese",
+    "language": "zh-CN"
+  }
+}
