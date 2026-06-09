@@ -38,6 +38,9 @@ def create_logger(filepath, rank: int):
 
         if rank == 0 and log_dir.exists():
             shutil.rmtree(log_dir)
+        if rank > 0:
+            import time
+            time.sleep(1)
         log_dir.mkdir(parents=True, exist_ok=True)
 
         file_handler = logging.FileHandler(filepath, mode="w")
