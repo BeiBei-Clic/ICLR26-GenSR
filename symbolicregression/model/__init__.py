@@ -6,6 +6,7 @@ from .embedders import NumericalEmbedder
 from .transformer import TransformerModel
 from .cvae import CVAEDE_SR
 from .feature_fusion import FeatureFusion
+from .flow_matching import FlowMatchingNet
 
 from .sklearn_wrapper import SymbolicTransformerRegressor
 from .model_wrapper import ModelWrapper
@@ -214,6 +215,13 @@ def build_modules(env, params, mode='train'):
         latent_dim=params.latent_dim,
         dec_emb_dim=params.dec_emb_dim,
         seq_len=params.max_src_len,
+    )
+
+    modules["flow_matching"] = FlowMatchingNet(
+        latent_dim=params.latent_dim,
+        hidden_dim=params.fm_hidden_dim,
+        n_layers=params.fm_n_layers,
+        time_dim=params.fm_time_dim,
     )
 
     for k, v in modules.items():

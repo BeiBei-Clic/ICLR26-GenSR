@@ -104,6 +104,16 @@ def get_parser():
         "--latent_dim", type=int, default=512, help="Dimension of latent space (bottleneck)"
     )
 
+    parser.add_argument("--fm_hidden_dim", type=int, default=1024, help="Flow Matching network hidden dim")
+    parser.add_argument("--fm_n_layers", type=int, default=6, help="Flow Matching network layers")
+    parser.add_argument("--fm_time_dim", type=int, default=256, help="Sinusoidal time embedding dim")
+    parser.add_argument("--fm_n_samples", type=int, default=16, help="Number of FM samples at inference")
+    parser.add_argument("--fm_ode_steps", type=int, default=10, help="ODE solver steps")
+    parser.add_argument("--fm_solver", type=str, default="euler", choices=["euler", "heun"], help="ODE solver: euler or heun")
+    parser.add_argument("--fm_lr", type=float, default=1e-4, help="Flow Matching learning rate")
+    parser.add_argument("--fm_epochs", type=int, default=50, help="Flow Matching training epochs")
+    parser.add_argument("--fm_save_periodic", type=int, default=5, help="Save FM checkpoint every N epochs")
+
     parser.add_argument(
         "--emb_emb_dim", type=int, default=64, help="Embedder embedding layer size"
     )

@@ -952,5 +952,57 @@ class Trainer(object):
 
         return mapped_src_enc_prior, mapped_src_enc_post, samples, loss
 
+    def fm_train_step(self, task):
+        """Flow Matching 训练步：冻结 CVAE，用 (prior_mu, post_mu) 训练 FM 网络。"""
+        from .model.flow_matching import compute_fm_loss
+
+        params = self.params
+        vae_model = self.modules["cvae"]
+        embedder_f = self.modules["data_encoder"]
+        embedder_e = self.modules["token_embed"]
+        fm_net = self.modules["flow_matching"]
+
+        # CVAE 冻结在 eval 模式
+        vae_model.eval()
+        embedder_f.eval()
+        embedder_e.eval()
+        fm_net.train()
+
+        samples, _ = self.get_batch(task)
+
+        x_to_fit = samples["x_to_fit"]
+        y_to_fit = samples["y_to_fit"]
+
+        x1 = []
+        for seq_id in range(len(x_to_fit)):
+            x1.append([])
+            for seq_l in range(len(x_to_fit[seq_id])):
+                x1[seq_id].append([x_to_fit[seq_id][seq_l], y_to_fit[seq_id][seq_l]])
+
+        with torch.no_grad():
+            x1, len1 = embedder_f(x1)
+
+            if params.use_skeleton:
+                x2, len2 = self.env.batch_equations(
+                    self.env.word_to_idx(samples["skeleton_tree_encoded"], float_input=False)
+                )
+            else:
+                x2, len2 = self.env.batch_equations(
+                    self.env.word_to_idx(samples["tree_encoded"], float_input=False)
+                )
+
+            x2, len2 = to_cuda(x2, len2)
+            x2_e = embedder_e(x2.transpose(0, 1)).transpose(0, 1)
+
+        with torch.no_grad():
+            prior_mu, prior_logvar, post_mu, post_logvar, _, _, _ = vae_model(
+                x1, x2_e, len1, len2, mode="train"
+            )
+
+        # prior_mu 作为条件，post_mu 作为真实潜在 z_0
+        fm_loss = compute_fm_loss(fm_net, post_mu, prior_mu)
+
+        return fm_loss
+
     def finalize_epoch_vae_losses(self):
         pass

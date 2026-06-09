@@ -53,3 +53,8 @@ _strip_comments.py
 .claude/
 *logs
 .codex
+
+# Cython compiled extensions
+*.so
+*.c
+!symbolicregression/envs/__init__.py

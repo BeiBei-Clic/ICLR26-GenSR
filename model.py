@@ -16,6 +16,7 @@ class VAESymbolicRegressor(nn.Module):
         self.embedder_f = self.modules["data_encoder"]
         self.embedder_e = self.modules["token_embed"]
         self.feature_fusion = self.modules["feature_fusion"]
+        self.fm_net = self.modules.get("flow_matching", None)
 
         self.vae_model.eval()
         self.decoder.eval()

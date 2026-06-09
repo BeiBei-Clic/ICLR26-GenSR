@@ -26,6 +26,13 @@
 
 ## 非功能需求
 
+### FR-5: 多 GPU 训练
+- **FR-5.1**: Flow Matching 训练支持 `torchrun` 多 GPU DDP 并行
+- **FR-5.2**: 自动按 world_size 切分 batch_size，梯度 all-reduce 同步
+- **FR-5.3**: checkpoint 保存/加载兼容 DDP（保存 raw state_dict，去掉 module. 前缀）
+- **FR-5.4**: 只有 master 进程做日志打印、wandb、checkpoint 保存
+- **FR-5.5**: 保持单 GPU 运行不变（向后兼容）
+
 ### NFR-1: 性能
 - 推理速度应显著快于 CMA-ES（无迭代进化搜索）
 - 支持 GPU 加速 ODE 求解

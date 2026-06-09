@@ -323,8 +323,7 @@ class FunctionEnvironment(object):
             return {"tree": tree}, ["generation error"]
 
         x_to_fit, y_to_fit = datapoints["fit"]
-        predict_datapoints = copy.deepcopy(datapoints)
-        del predict_datapoints["fit"]
+        predict_datapoints = {k: v for k, v in datapoints.items() if k != "fit"}
 
         all_outputs = np.concatenate([y for k, (x, y) in datapoints.items()])
 
@@ -434,7 +433,10 @@ class FunctionEnvironment(object):
                 if data_path is None or params.num_workers == 0
                 else 1),
             shuffle=False,
-            collate_fn=collate_fn,)
+            collate_fn=collate_fn,
+            pin_memory=True,
+            prefetch_factor=8 if params.num_workers > 0 else None,
+            persistent_workers=True if params.num_workers > 0 else False,)
 
 
     def create_test_iterator(
@@ -937,7 +939,7 @@ class EnvDataset(Dataset):
         samples["infos"] = info_tensor
         if "input_sequence_length" in samples["infos"]:
             del samples["infos"]["input_sequence_length"]
-        errors = copy.deepcopy(self.errors)
+        errors = dict(self.errors)
         self.errors = defaultdict(int)
         return samples, errors
 
@@ -1037,12 +1039,12 @@ class EnvDataset(Dataset):
 
         if self.remaining_data == 0:
             gen_args = {
-                'train': self.train, 
+                'train': self.train,
                 'input_length_modulo': self.input_length_modulo
             }
             if self.fixed_input_dimension is not None:
                 gen_args['input_dimension'] = self.fixed_input_dimension
-                
+
             self.expr, errors = self.env.gen_expr(**gen_args)
             for error, count in errors.items():
                 self.errors[error] += count
@@ -1050,16 +1052,24 @@ class EnvDataset(Dataset):
             self.remaining_data = len(self.expr["X_to_fit"])
 
         self.remaining_data -= 1
-        x_to_fit = self.expr["X_to_fit"][-self.remaining_data]
-        y_to_fit = self.expr["Y_to_fit"][-self.remaining_data]
-        sample = copy.deepcopy(self.expr)
-        sample["x_to_fit"] = x_to_fit
-        sample["y_to_fit"] = y_to_fit
-        del sample["X_to_fit"]
-        del sample["Y_to_fit"]
-        sample["infos"] = select_dico_index(sample["infos"], -self.remaining_data)
+        idx = -self.remaining_data
+        sample = {
+            "x_to_fit": self.expr["X_to_fit"][idx],
+            "y_to_fit": self.expr["Y_to_fit"][idx],
+            "tree_encoded": self.expr["tree_encoded"],
+            "skeleton_tree_encoded": self.expr["skeleton_tree_encoded"],
+            "tree": self.expr["tree"],
+            "skeleton_tree": self.expr["skeleton_tree"],
+            "infos": select_dico_index(self.expr["infos"], idx),
+        }
+        # predict datapoints (如 x_to_predict 等)
+        for k in list(self.expr.keys()):
+            if k.startswith("x_to_") and k != "x_to_fit":
+                sample[k] = self.expr[k]
+            elif k.startswith("y_to_") and k != "y_to_fit":
+                sample[k] = self.expr[k]
         self.count += 1
-        
+
         return sample
 
 

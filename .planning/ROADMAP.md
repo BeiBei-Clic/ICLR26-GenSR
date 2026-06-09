@@ -71,7 +71,31 @@
 
 ---
 
+## Phase 4: Flow Matching 多 GPU 训练
+**目标**：为 `train_fm.py` 添加 DDP 多卡并行支持，大幅加速 FM 训练
+**Plans:** 1 plan
+
+Plans:
+- [x] 04-01-PLAN.md — DDP 多卡训练支持（train_fm.py + train_fm.sh） -- COMPLETED 2026-06-07
+
+**Requirements:** FR-5.1, FR-5.2, FR-5.3, FR-5.4, FR-5.5
+
+---
+
+## Phase 5: Cython 重写表达式求值热路径
+**目标**：用 Cython 重写 `Node.val(x)` 表达式树求值热路径，消除 Python 解释器开销，提升数据生成吞吐量，从而提高 GPU 训练利用率
+**Depends on:** Phase 4
+**Plans:** 2 plans
+
+Plans:
+- [x] 05-01-PLAN.md -- Cython 栈式求值器实现 + 正确性测试 -- COMPLETED 2026-06-09
+- [x] 05-02-PLAN.md -- generators.py 集成 + 端到端验证 + 性能基准 -- COMPLETED 2026-06-09
+
+---
+
 ## 依赖关系
 - Phase 2 依赖 Phase 1（模型定义）
 - Phase 3 依赖 Phase 2（训练好的模型）
+- Phase 4 依赖 Phase 2（在 train_fm.py 基础上改）
+- Phase 5 依赖 Phase 4（在优化后的训练管线基础上进一步提升）
 - Phase 1 内部任务可部分并行

@@ -86,6 +86,181 @@ python experiments/pmlb/pmlb_batch_inference.py \
   --noise_strength 0
 ```
 
+## 预训练（CVAE Stage 1）
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python train.py \
+  --batch_size 64 \
+  --accumulate_gradients 2 \
+  --amp 0 \
+  --dump_path ./dump \
+  --max_input_dimension 10 \
+  --exp_name vae \
+  --exp_id run-train \
+  --lr 1e-3 \
+  --latent_dim 512 \
+  --save_periodic 10 \
+  --n_steps_per_epoch 2000 \
+  --max_epoch 500 \
+  --kl_limits 1.0 \
+  --model_type vae \
+  --wandb_disabled \
+  --print_freq 100
+```
+
+## Flow Matching 训练（Stage 2）
+
+冻结 CVAE，只训练 Flow Matching 先验网络。需先完成预训练。
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun \
+  --standalone \
+  --nproc_per_node=4 \
+  ./train_fm.py \
+  --cvae_checkpoint weights/checkpoint.pth \
+  --max_input_dimension 10 \
+  --batch_size 128 \
+  --num_workers 8 \
+  --accumulate_gradients 2 \
+  --amp 0 \
+  --dump_path ./dump \
+  --exp_name fm \
+  --exp_id run-fm \
+  --latent_dim 512 \
+  --d_model 512 \
+  --d_input 512 \
+  --enc_emb_dim 512 \
+  --dec_emb_dim 512 \
+  --n_enc_layers 8 \
+  --n_dec_layers 16 \
+  --n_enc_heads 16 \
+  --n_dec_heads 16 \
+  --n_steps_per_epoch 2000 \
+  --max_epoch 1 \
+  --kl_limits 1.0 \
+  --model_type vae \
+  --lr 1e-3 \
+  --fm_lr 1e-4 \
+  --fm_epochs 50 \
+  --fm_hidden_dim 1024 \
+  --fm_n_layers 6 \
+  --fm_n_samples 16 \
+  --fm_ode_steps 10 \
+  --fm_save_periodic 5 \
+  --fm_val_freq 5 \
+  --fm_val_steps 200 \
+  --print_freq 100 \
+  --save_periodic 25 \
+  --wandb_disabled
+```
+
+从已有 checkpoint 接续训练（不加 `--fm_restart` 即自动从 `fm_latest.pth` 恢复）：
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun \
+  --standalone \
+  --nproc_per_node=4 \
+  ./train_fm.py \
+  --cvae_checkpoint weights/checkpoint.pth \
+  --max_input_dimension 10 \
+  --batch_size 128 \
+  --num_workers 8 \
+  --accumulate_gradients 2 \
+  --amp 0 \
+  --dump_path ./dump \
+  --exp_name fm \
+  --exp_id run-fm \
+  --latent_dim 512 \
+  --d_model 512 \
+  --d_input 512 \
+  --enc_emb_dim 512 \
+  --dec_emb_dim 512 \
+  --n_enc_layers 8 \
+  --n_dec_layers 16 \
+  --n_enc_heads 16 \
+  --n_dec_heads 16 \
+  --n_steps_per_epoch 2000 \
+  --max_epoch 1 \
+  --kl_limits 1.0 \
+  --model_type vae \
+  --lr 1e-3 \
+  --fm_lr 1e-4 \
+  --fm_epochs 50 \
+  --fm_hidden_dim 1024 \
+  --fm_n_layers 6 \
+  --fm_n_samples 16 \
+  --fm_ode_steps 10 \
+  --fm_save_periodic 5 \
+  --fm_val_freq 5 \
+  --fm_val_steps 200 \
+  --print_freq 100 \
+  --save_periodic 25 \
+  --wandb_disabled
+```
+
+或使用封装好的脚本：
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1,2,3 bash scripts/train_fm.sh
+```
+
+低资源快速验证（CPU / 少步数）：
+
+```bash
+python train_fm.py \
+  --cvae_checkpoint weights/checkpoint.pth \
+  --cpu True \
+  --wandb_disabled \
+  --env_name functions \
+  --max_input_dimension 10 \
+  --fm_epochs 1 \
+  --fm_lr 1e-4 \
+  --n_steps_per_epoch 10 \
+  --print_freq 1 \
+  --batch_size 4 \
+  --latent_dim 512 \
+  --d_model 512 \
+  --d_input 512 \
+  --enc_emb_dim 512 \
+  --dec_emb_dim 512 \
+  --n_enc_layers 8 \
+  --n_dec_layers 16 \
+  --n_enc_heads 16 \
+  --n_dec_heads 16 \
+  --max_epoch 1 \
+  --dump_path ./dump \
+  --fm_restart
+```
+
+## Flow Matching 批量推理
+
+需先完成 FM 训练并得到 `fm_best.pth`。
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python experiments/pmlb/pmlb_batch_inference.py \
+  --inference_mode flow_matching \
+  --fm_checkpoint weights/fm_best.pth \
+  --model_path weights/checkpoint.pth \
+  --device cuda:0 \
+  --datasets_dir pmlb/datasets \
+  --max_input_dimension 10 \
+  --beam_size 2 \
+  --model_type vae \
+  --com_weight 400 \
+  --lso_stop_r2 0.95 \
+  --fm_n_samples 16 \
+  --fm_ode_steps 10 \
+  --fm_solver euler \
+  --wandb_disabled \
+  --output_csv experiments/pmlb/results/pmlb_flow_matching.csv
+```
+
+或使用脚本：
+
+```bash
+bash scripts/fm_batch_inference.sh 0 weights/fm_best.pth
+```
+
 ## 隐空间分布分析
 
 ```bash

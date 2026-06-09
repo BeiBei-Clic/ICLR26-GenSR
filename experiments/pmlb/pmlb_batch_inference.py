@@ -18,6 +18,7 @@ import symbolicregression
 import symbolicregression.model.utils_wrapper as utils_wrapper
 from LSO_eval import read_file, reload_model
 from LSO_fit import lso_fit_es_covfromvae_fit
+from fm_inference import fm_fit
 from model import VAESymbolicRegressor
 from parsers import get_parser
 from symbolicregression.envs import build_env
@@ -58,31 +59,34 @@ if __name__ == "__main__":
     parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--noise_strength", type=float, default=0.0)
     parser.add_argument("--noise_seed", type=int, default=0)
+    parser.add_argument("--inference_mode", type=str, default="cma_es",
+                        choices=["cma_es", "flow_matching"],
+                        help="Inference mode: cma_es (default) or flow_matching")
+    parser.add_argument("--fm_checkpoint", type=str, default="",
+                        help="Path to FM checkpoint (required for flow_matching mode)")
     args = parser.parse_args()
 
     if args.noise_strength < 0:
         raise ValueError(f"noise_strength must be non-negative, got {args.noise_strength}")
 
-    if not args.device.startswith("cuda"):
-        raise ValueError(f"Batch inference requires a CUDA device, got {args.device}")
-
-    if not torch.cuda.is_available():
-        raise RuntimeError(f"CUDA device {args.device} requested, but torch.cuda.is_available() is False")
-
-    if args.device == "cuda":
-        torch.cuda.set_device(0)
-        args.device = "cuda:0"
-    elif ":" in args.device:
-        torch.cuda.set_device(int(args.device.split(":", 1)[1]))
-    else:
+    if not args.device.startswith("cuda") and not args.device.startswith("cpu"):
         raise ValueError(f"Unsupported device format: {args.device}")
+
+    if args.device.startswith("cuda"):
+        if not torch.cuda.is_available():
+            raise RuntimeError(f"CUDA device {args.device} requested, but torch.cuda.is_available() is False")
+        if args.device == "cuda":
+            torch.cuda.set_device(0)
+            args.device = "cuda:0"
+        elif ":" in args.device:
+            torch.cuda.set_device(int(args.device.split(":", 1)[1]))
 
     model_path = Path(args.model_path).resolve()
     if not model_path.is_file():
         raise FileNotFoundError(model_path)
 
     output_csv = Path(args.output_csv) if args.output_csv else Path(
-        f"experiments/pmlb/results/pmlb_batch_inference_noise_{args.noise_strength:g}.csv"
+        f"experiments/pmlb/results/pmlb_{args.inference_mode}_noise_{args.noise_strength:g}.csv"
     )
     output_csv.parent.mkdir(parents=True, exist_ok=True)
 
@@ -100,7 +104,7 @@ if __name__ == "__main__":
     args.max_number_bags = 10
     args.eval_verbose_print = True
     args.rescale = True
-    args.cpu = False
+    args.cpu = args.device.startswith("cpu")
     args.device = torch.device(args.device)
     args.num_workers = 1
     args.eval_only = True
@@ -136,6 +140,22 @@ if __name__ == "__main__":
 
     trainer = Trainer(modules, env, args)
     reload_model(trainer.modules, str(model_path))
+
+    # Flow Matching 模式：加载 FM checkpoint
+    if args.inference_mode == "flow_matching":
+        fm_ckpt_path = args.fm_checkpoint
+        if not fm_ckpt_path:
+            # 默认从 CVAE checkpoint 同目录找 fm_best.pth
+            fm_ckpt_path = str(model_path.parent / "fm_best.pth")
+        if not Path(fm_ckpt_path).is_file():
+            raise FileNotFoundError(
+                f"FM checkpoint not found: {fm_ckpt_path}. "
+                f"Use --fm_checkpoint to specify the path."
+            )
+        fm_data = torch.load(fm_ckpt_path, map_location=args.device, weights_only=False)
+        modules["flow_matching"].load_state_dict(fm_data["flow_matching"])
+        print(f"Loaded FM checkpoint from {fm_ckpt_path}")
+
     model = VAESymbolicRegressor(params=args, env=env, modules=trainer.modules)
     model.to(args.device)
 
@@ -204,7 +224,7 @@ if __name__ == "__main__":
                 "dataset": problem_name,
                 "status": "failed",
                 "n_features": 0,
-                "refinement_type": "lso",
+                "refinement_type": "lso" if args.inference_mode == "cma_es" else "fm",
                 "r2": np.nan,
                 "rmse": np.nan,
                 "complexity": np.nan,
@@ -253,15 +273,21 @@ if __name__ == "__main__":
                 }
 
                 with torch.no_grad():
-                    batch_results = lso_fit_es_covfromvae_fit(
-                        sample_to_learn,
-                        env,
-                        args,
-                        model,
-                        defaultdict(list),
-                        1,
-                        es_strategy=args.es_strategy,
-                    )
+                    if args.inference_mode == "flow_matching":
+                        batch_results = fm_fit(
+                            sample_to_learn, env, args, model,
+                            defaultdict(list), 1,
+                        )
+                    else:
+                        batch_results = lso_fit_es_covfromvae_fit(
+                            sample_to_learn,
+                            env,
+                            args,
+                            model,
+                            defaultdict(list),
+                            1,
+                            es_strategy=args.es_strategy,
+                        )
 
                 result_df = pd.DataFrame.from_dict(
                     {k: v for k, v in batch_results.items() if k != "all_iteration_times"}

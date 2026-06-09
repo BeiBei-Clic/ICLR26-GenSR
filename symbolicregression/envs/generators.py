@@ -19,6 +19,24 @@ logger = getLogger()
 import random
 import re
 
+# ---- Cython 栈式求值器操作码 ----
+OP_CONST, OP_VAR = 0, 1
+OP_ADD, OP_SUB, OP_MUL, OP_DIV = 2, 3, 4, 5
+OP_SIN, OP_COS, OP_EXP, OP_LOG, OP_SQRT = 6, 7, 8, 9, 10
+OP_ABS, OP_POW2, OP_POW3, OP_INV, OP_NEG = 11, 12, 13, 14, 15
+OP_TAN, OP_ATAN, OP_ASIN, OP_ACOS = 16, 17, 18, 19
+OP_POW, OP_MAX, OP_MIN, OP_SIGN, OP_STEP = 20, 21, 22, 23, 24
+
+_OP_MAP = {
+    'add': OP_ADD, 'sub': OP_SUB, 'mul': OP_MUL, 'div': OP_DIV,
+    'sin': OP_SIN, 'cos': OP_COS, 'exp': OP_EXP, 'log': OP_LOG,
+    'sqrt': OP_SQRT, 'abs': OP_ABS, 'pow2': OP_POW2, 'pow3': OP_POW3,
+    'inv': OP_INV,
+    'tan': OP_TAN, 'arctan': OP_ATAN, 'arcsin': OP_ASIN, 'arccos': OP_ACOS,
+    'pow': OP_POW, 'max': OP_MAX, 'min': OP_MIN, 'sign': OP_SIGN, 'step': OP_STEP,
+}
+_MATH_CONST = {'e': np.e, 'pi': np.pi, 'euler_gamma': np.euler_gamma}
+
 operators_real = {
     "add": 2,
     "sub": 2,
@@ -234,6 +252,26 @@ class Node:
                 return fn(self.children[0].val(x))
             assert False, "Could not find function"
 
+    def compile_to_instructions(self):
+        """后序遍历树，生成扁平指令列表 (opcodes, constants, var_dims)。"""
+        opcodes, constants, var_dims = [], [], []
+        for child in self.children:
+            oc, co, vd = child.compile_to_instructions()
+            opcodes.extend(oc); constants.extend(co); var_dims.extend(vd)
+        val = self.value
+        if val.startswith('x_'):
+            opcodes.append(OP_VAR)
+            var_dims.append(int(val.split('_')[1]))
+        elif val in _OP_MAP:
+            opcodes.append(_OP_MAP[val])
+        else:
+            opcodes.append(OP_CONST)
+            if val in _MATH_CONST:
+                constants.append(_MATH_CONST[val])
+            else:
+                constants.append(float(val))
+        return opcodes, constants, var_dims
+
     def get_recurrence_degree(self):
         recurrence_degree = 0
         if len(self.children) == 0:
@@ -280,6 +318,25 @@ class NodeList:
             for node in self.nodes
         ]
         return np.concatenate(batch_vals, -1)
+
+    def val_cython(self, xs, deterministic=True):
+        """使用 Cython 栈式求值器计算 NodeList 的值。"""
+        from symbolicregression.envs.cython_eval import eval_tree_flat
+        x = np.ascontiguousarray(xs, dtype=np.float64)
+        if not hasattr(self, '_compiled_cache'):
+            self._compiled_cache = []
+            for node in self.nodes:
+                oc, co, vd = node.compile_to_instructions()
+                self._compiled_cache.append((
+                    np.array(oc, dtype=np.int32),
+                    np.array(co, dtype=np.float64),
+                    np.array(vd, dtype=np.int32),
+                ))
+        batch_vals = []
+        for opcodes, constants, var_dims in self._compiled_cache:
+            result = eval_tree_flat(x, opcodes, constants, var_dims)
+            batch_vals.append(np.expand_dims(result, -1))
+        return np.concatenate(batch_vals, axis=-1)
 
     def replace_node_value(self, old_value, new_value):
         for node in self.nodes:
@@ -902,7 +959,7 @@ class RandomFunctions(Generator):
                 input *= std
                 input += mean
 
-            output = tree.val(input)
+            output = tree.val_cython(input)
 
 
             is_nan_idx = np.any(np.isnan(output), -1)
