@@ -10,5 +10,8 @@
   "defaults": {
     "commit_style": "chinese",
     "language": "zh-CN"
+  },
+  "workflow": {
+    "_auto_chain_active": false
   }
 }
