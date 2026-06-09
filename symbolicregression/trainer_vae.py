@@ -422,6 +422,10 @@ class Trainer(object):
         self.modules_raw = {k: v for k, v in self.modules.items()}
         for k in trainable_keys:
             if k in self.modules:
+                has_grad = any(p.requires_grad for p in self.modules[k].parameters())
+                if not has_grad:
+                    logger.info(f"Skipping DDP for {k} (no trainable parameters)")
+                    continue
                 logger.info(f"Wrapping {k} with DDP on device {local_rank} ...")
                 self.modules[k] = DDP(
                     self.modules[k],
@@ -952,7 +956,7 @@ class Trainer(object):
 
         return mapped_src_enc_prior, mapped_src_enc_post, samples, loss
 
-    def fm_train_step(self, task):
+    def fm_train_step(self, task, training=True):
         """Flow Matching 训练步：冻结 CVAE，用 (prior_mu, post_mu) 训练 FM 网络。"""
         from .model.flow_matching import compute_fm_loss
 
@@ -966,7 +970,7 @@ class Trainer(object):
         vae_model.eval()
         embedder_f.eval()
         embedder_e.eval()
-        fm_net.train()
+        fm_net.train(training)
 
         samples, _ = self.get_batch(task)
 

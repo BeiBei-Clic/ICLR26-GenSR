@@ -132,7 +132,7 @@ def main(params):
 
     task = params.tasks[0] if isinstance(params.tasks, (list, tuple)) else params.tasks
 
-    best_loss = float("inf")
+    best_val_loss = float("inf")
 
     fm_net_ddp = modules["flow_matching"]
 
@@ -174,14 +174,37 @@ def main(params):
 
         avg_epoch_loss = epoch_loss / max(n_steps, 1)
         if params.is_master:
-            print(f"Epoch {epoch} finished. Avg FM loss: {avg_epoch_loss:.6f}")
+            print(f"Epoch {epoch} finished. Avg train FM loss: {avg_epoch_loss:.6f}")
+
+        # 每 fm_val_freq epoch 跑验证
+        avg_val_loss = float("inf")
+        if (epoch + 1) % params.fm_val_freq == 0 or (epoch + 1) == params.fm_epochs:
+            fm_module_raw.eval()
+            val_loss_tensor = torch.tensor(0.0, device=params.device)
+            with torch.no_grad():
+                for _ in range(params.fm_val_steps):
+                    vloss = trainer.fm_train_step(task, training=False)
+                    val_loss_tensor += vloss.detach()
+            avg_val_loss = (val_loss_tensor / params.fm_val_steps).item()
+            fm_module_raw.train()
+            if params.is_master:
+                print(f"  >> Validation FM loss: {avg_val_loss:.6f} ({params.fm_val_steps} steps)")
+
+            if avg_val_loss < best_val_loss:
+                best_val_loss = avg_val_loss
+                if params.is_master:
+                    best_path = fm_ckpt_dir / "fm_best.pth"
+                    save_fm_checkpoint(modules, fm_optimizer, epoch, avg_val_loss, str(best_path), fm_module_raw=fm_module_raw)
 
         if params.is_master:
-            wandb.log({
+            log_data = {
                 "fm/epoch": epoch,
-                "fm/avg_loss": avg_epoch_loss,
+                "fm/train_loss": avg_epoch_loss,
                 "fm/lr": fm_optimizer.param_groups[0]["lr"],
-            })
+            }
+            if avg_val_loss != float("inf"):
+                log_data["fm/val_loss"] = avg_val_loss
+            wandb.log(log_data)
 
         # 保存最新 checkpoint
         if params.is_master:
@@ -192,22 +215,17 @@ def main(params):
             save_path = fm_ckpt_dir / f"fm_epoch{epoch:04d}.pth"
             save_fm_checkpoint(modules, fm_optimizer, epoch, avg_epoch_loss, str(save_path), fm_module_raw=fm_module_raw)
 
-        # 保存 best
-        if avg_epoch_loss < best_loss:
-            best_loss = avg_epoch_loss
-            if params.is_master:
-                best_path = fm_ckpt_dir / "fm_best.pth"
-                save_fm_checkpoint(modules, fm_optimizer, epoch, avg_epoch_loss, str(best_path), fm_module_raw=fm_module_raw)
-
     wandb.finish()
     if params.is_master:
-        print(f"\nTraining done. Best loss: {best_loss:.6f}")
+        print(f"\nTraining done. Best val loss: {best_val_loss:.6f}")
 
 
 if __name__ == "__main__":
     parser = get_parser()
     parser.add_argument("--cvae_checkpoint", type=str, default="", help="Path to CVAE checkpoint")
     parser.add_argument("--fm_restart", action="store_true", help="Restart FM training from scratch")
+    parser.add_argument("--fm_val_freq", type=int, default=5, help="Validate every N epochs")
+    parser.add_argument("--fm_val_steps", type=int, default=200, help="Number of validation steps")
     params = parser.parse_args()
     check_model_params(params)
     main(params)
