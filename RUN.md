@@ -61,8 +61,8 @@ torchrun --nproc_per_node=4 --master_port=29500 dit_train/train_fm.py \
   --grad-accum-steps 8 \
   --learning-rate 1e-4 \
   --output-dir dit_train/checkpoints \
-  --eval-every 5000 \
-  --save-every 10000 \
+  --eval-every 100 \
+  --save-every 100 \
   --checkpoint-path weights/checkpoint.pth
 ```
 
