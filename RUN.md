@@ -1,6 +1,100 @@
 # 运行指南
 
-## PMLB 批量推理
+## VAE 训练
+
+### 单卡训练
+
+```bash
+bash scripts/train.sh
+```
+
+### 多卡训练（单机多卡，DDP）
+
+```bash
+torchrun --nproc_per_node=4 --master_port=29500 train.py \
+    --batch_size 64 \
+    --accumulate_gradients 2 \
+    --amp 0 \
+    --dump_path ./dump \
+    --max_input_dimension 10 \
+    --exp_name vae \
+    --exp_id run-train-multigpu \
+    --lr 1e-3 \
+    --latent_dim 512 \
+    --save_periodic 10 \
+    --n_steps_per_epoch 2000 \
+    --max_epoch 500 \
+    --kl_limits 1.0 \
+    --model_type vae \
+    --wandb_disabled \
+    --print_freq 100
+```
+
+> - `--nproc_per_node=4` 表示使用 4 张 GPU，根据实际 GPU 数量修改
+> - batch_size 64 会自动均分到每张卡上（每卡 16）
+> - `--master_port=29500` 可按需修改避免端口冲突
+
+## DiT Flow Matching 训练
+
+训练 GenSRDiT 学习 prior_mu → post_mu 速度场。训练数据由 CVAE 在线生成，CVAE/Decoder 全部冻结。
+
+单卡训练：
+
+```bash
+python dit_train/train_fm.py \
+  --num-iterations 100000 \
+  --device-batch-size 4 \
+  --grad-accum-steps 8 \
+  --learning-rate 1e-4 \
+  --output-dir dit_train/checkpoints \
+  --eval-every 5000 \
+  --save-every 10000 \
+  --checkpoint-path weights/checkpoint.pth
+```
+
+多卡训练（单机多卡，DDP）：
+
+```bash
+torchrun --nproc_per_node=4 --master_port=29500 dit_train/train_fm.py \
+  --num-iterations 100000 \
+  --device-batch-size 4 \
+  --grad-accum-steps 8 \
+  --learning-rate 1e-4 \
+  --output-dir dit_train/checkpoints \
+  --eval-every 5000 \
+  --save-every 10000 \
+  --checkpoint-path weights/checkpoint.pth
+```
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `num_iterations` | 5000 | 训练迭代数 |
+| `device_batch_size` | 4 | 单卡 batch size |
+| `grad_accum_steps` | 8 | 梯度累积步数（有效 batch = 4×8 = 32） |
+| `learning_rate` | 1e-4 | AdamW 学习率 |
+| `weight_decay` | 0.01 | AdamW 权重衰减 |
+| `warmup_ratio` | 0.05 | 预热占比 |
+| `warmdown_ratio` | 0.3 | 末尾衰减占比 |
+| `timestep_dist` | logit_normal | 时间步采样分布 |
+| `output_dir` | dit_train/checkpoints | checkpoint 保存目录 |
+| `eval_every` | 500 | 评估间隔 |
+| `eval_steps` | 20 | 评估步数 |
+| `save_every` | 1000 | 保存间隔 |
+| `checkpoint_path` | weights/checkpoint.pth | CVAE 预训练权重 |
+| `resume` | (空) | 从 checkpoint 恢复训练 |
+
+快速验证（调试用）：
+
+```bash
+python dit_train/train_fm.py \
+  --num-iterations 100 \
+  --device-batch-size 2 \
+  --eval-every 50 \
+  --save-every 100 \
+  --checkpoint-path weights/checkpoint.pth
+```
+
+## PMLB 批量推理（CMA-ES 基线）
 
 `pmlb_batch_inference.py` 的默认值按 `main` 分支 `scripts/eval.sh` 的 PMLB 评测配置设置。下表和下面的显式运行命令逐项一致。
 
@@ -84,6 +178,38 @@ python experiments/pmlb/pmlb_batch_inference.py \
   --lso_max_iteration 10 \
   --device cuda:0 \
   --noise_strength 0
+```
+
+## DiT 评估（PMLB 数据集）
+
+训练完成后，用 `dit_eval.py` 在全部 PMLB 回归数据集上运行 DiT 推理评估。
+
+```bash
+python experiments/pmlb/dit_eval.py \
+  --dit_checkpoint dit_train/checkpoints/fm_best.pt \
+  --model_path weights/checkpoint.pth \
+  --output_csv experiments/pmlb/GenSR_dit/pmlb_dit_results.csv \
+  --num_steps 16 \
+  --device cuda:0
+```
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `dit_checkpoint` | weights/fm_best.pt | DiT checkpoint 路径 |
+| `model_path` | weights/checkpoint.pth | CVAE 预训练权重 |
+| `output_csv` | experiments/pmlb/GenSR_dit/pmlb_dit_results.csv | 结果 CSV 路径 |
+| `num_steps` | 16 | Euler 积分步数 |
+| `dataset_limit` | -1 | 限制数据集数量（-1=全部） |
+| `max_rows` | -1 | 限制每数据集行数 |
+| `device` | cuda:0 | 运行设备 |
+
+快速验证（2 个数据集）：
+
+```bash
+python experiments/pmlb/dit_eval.py \
+  --dit_checkpoint dit_train/checkpoints/fm_best.pt \
+  --dataset_limit 2 \
+  --device cuda:0
 ```
 
 ## 隐空间分布分析

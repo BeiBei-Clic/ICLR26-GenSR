@@ -31,6 +31,7 @@ venv/
 # Experiment outputs
 dump/
 wandb/
+dit_train/data/latent_distribution.pdf
 eval_result/
 gensr_results/
 srbench_results/
