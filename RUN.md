@@ -230,6 +230,7 @@ python dit_train/finetune_lm_head.py \
   --dit-checkpoint dit_train/checkpoints/fm_best.pt \
   --vae-checkpoint weights/checkpoint.pth \
   --dit-num-steps 16 \
+  --num-workers 2 \
   --log-every 50
 ```
 
@@ -242,6 +243,7 @@ python dit_train/finetune_lm_head.py \
 | `vae_checkpoint` | weights/checkpoint.pth | CVAE 预训练权重 |
 | `output_dir` | dit_train/checkpoints | 最优权重保存目录 |
 | `dit_num_steps` | 16 | DiT Euler 积分步数 |
+| `num_workers` | 2 | 数据预加载 worker 数 |
 | `log_every` | 50 | 训练 loss 日志间隔（也是验证间隔） |
 
 多卡训练（单机多卡，DDP）：
@@ -254,6 +256,7 @@ torchrun --nproc_per_node=4 --master_port=29500 dit_train/finetune_lm_head.py \
   --dit-checkpoint dit_train/checkpoints/fm_best.pt \
   --vae-checkpoint weights/checkpoint.pth \
   --dit-num-steps 16 \
+  --num-workers 2 \
   --log-every 50
 ```
 
