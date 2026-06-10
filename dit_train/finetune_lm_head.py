@@ -5,10 +5,11 @@
 
 照搬 Cola-DLM cola_vae_finetune.py 冻结/训练策略 (D-01, D-03)。
 数据流：FunctionEnvironment -> CVAE -> DiT Euler -> FeatureFusion -> Decoder fwd+predict -> CE loss (D-02)。
+训练数据通过 spawn 多进程预加载，主进程只做 decoder forward + backward。
 
 Usage:
     python dit_train/finetune_lm_head.py
-    python dit_train/finetune_lm_head.py --num-iterations 500 --batch-size 8 --learning-rate 1e-4
+    python dit_train/finetune_lm_head.py --num-iterations 500 --batch-size 8 --learning-rate 1e-4 --num-workers 2
 """
 
 import os
@@ -35,6 +36,7 @@ def main():
     parser.add_argument("--vae-checkpoint", type=str, default="weights/checkpoint.pth")
     parser.add_argument("--output-dir", type=str, default="dit_train/checkpoints")
     parser.add_argument("--dit-num-steps", type=int, default=16, help="DiT Euler 积分步数")
+    parser.add_argument("--num-workers", type=int, default=2, help="数据预加载 worker 数")
     parser.add_argument("--log-every", type=int, default=50)
     args = parser.parse_args()
 
@@ -125,7 +127,17 @@ def main():
         lr=args.learning_rate,
     )
 
-    # ========== 5. 训练循环 ==========
+    # ========== 5. DataLoader（spawn 多进程预加载） ==========
+    from dit_train.data.finetune_dataset import create_finetune_dataloader
+
+    loader = create_finetune_dataloader(
+        params, batch_size=args.batch_size, num_workers=args.num_workers,
+        device=device, vae_checkpoint=args.vae_checkpoint,
+        dit_checkpoint=args.dit_checkpoint, dit_num_steps=args.dit_num_steps,
+    )
+    data_iter = iter(loader)
+
+    # ========== 6. 训练循环 ==========
     if is_master:
         print(f"\n=== Decoder lm_head Fine-tuning ===")
         print(f"iterations: {args.num_iterations}, batch_size: {args.batch_size}, lr: {args.learning_rate}")
@@ -141,49 +153,16 @@ def main():
     for step in range(args.num_iterations):
         t0 = time.time()
 
-        # --- 在线生成训练数据 (D-02) ---
-        src_enc_list = []
-        x2_list = []
-        len2_list = []
-
-        with torch.no_grad():
-            for _ in range(args.batch_size):
-                samples, _ = env.gen_expr(train=True)
-
-                x_to_fit = samples["X_to_fit"]
-                y_to_fit = samples["Y_to_fit"]
-                x1 = [[[x, y] for x, y in zip(xs, ys)]
-                       for xs, ys in zip(x_to_fit, y_to_fit)]
-                x1_single, len1_single = embedder_f(x1)
-
-                x2_single, len2_single = env.batch_equations(
-                    env.word_to_idx([samples["tree_encoded"]], float_input=False)
-                )
-                x2_single, len2_single = to_cuda(x2_single, len2_single)
-                x2_e_single = embedder_e(x2_single.transpose(0, 1)).transpose(0, 1)
-
-                # CVAE 编码
-                prior_mu, prior_logvar, _, _, _, _, _ = vae_model(
-                    x1_single, x2_e_single, len1_single, len2_single, mode="train"
-                )
-
-                # DiT Euler 积分 -> z_opt
-                z_opt = euler_inference(dit, prior_mu, num_steps=args.dit_num_steps)
-
-                # FeatureFusion -> src_enc
-                src_enc = feature_fusion(z_opt, prior_logvar)
-
-                src_enc_list.append(src_enc)
-                x2_list.append(x2_single)
-                len2_list.append(len2_single)
+        # --- 从 DataLoader 获取预生成的训练数据 ---
+        src_enc_batch, x2_list, len2_list = next(data_iter)
 
         # 逐样本计算 CE loss 然后平均（方程长度不同无法直接 batch）
         total_loss = 0.0
         count = 0
         for i in range(args.batch_size):
-            src_enc = src_enc_list[i]  # (1, 200, 512) from FeatureFusion
-            eq_tokens = x2_list[i]     # (slen, 1)
-            eq_len = len2_list[i]      # (1,)
+            src_enc = src_enc_batch[i:i+1]  # (1, 200, 512)
+            eq_tokens = x2_list[i]          # (slen, 1)
+            eq_len = len2_list[i]           # (1,)
 
             pred_mask = (alen[:, None] < eq_len[None] - 1)
             y = eq_tokens[1:].masked_select(pred_mask[:-1])
@@ -261,7 +240,6 @@ def main():
                         eq_tokens = val_x2_list[i]
                         eq_len = val_len2_list[i]
 
-                        alen = torch.arange(params.max_src_len, dtype=torch.long, device=device)
                         pred_mask = (alen[:, None] < eq_len[None] - 1)
                         y = eq_tokens[1:].masked_select(pred_mask[:-1])
 
