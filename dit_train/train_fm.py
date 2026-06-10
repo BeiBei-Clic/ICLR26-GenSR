@@ -31,11 +31,12 @@ from dit_train.data.latent_dataset import create_latent_dataloader
 # 时间步采样 (D-02, 照搬 cola_sft.py:440-445)
 # ---------------------------------------------------------------------------
 
-def sample_timestep(batch_size, dist="logit_normal", loc=0.0, scale=1.0):
+def sample_timestep(batch_size, device="cuda", dist="logit_normal", loc=0.0, scale=1.0):
     """采样 Flow Matching 时间步。
 
     Args:
         batch_size: batch 大小
+        device: 设备（DDP 多卡时传入正确设备）
         dist: "logit_normal" 或 "uniform"
         loc: logit-normal 的位置参数
         scale: logit-normal 的尺度参数
@@ -43,8 +44,8 @@ def sample_timestep(batch_size, dist="logit_normal", loc=0.0, scale=1.0):
         (batch_size,) 时间步张量，值在 (0, 1) 范围内
     """
     if dist == "uniform":
-        return torch.rand(batch_size, device="cuda")
-    u = torch.randn(batch_size, device="cuda")
+        return torch.rand(batch_size, device=device)
+    u = torch.randn(batch_size, device=device)
     return torch.sigmoid(loc + scale * u)
 
 
@@ -66,7 +67,8 @@ def flow_matching_step(dit, prior_mu, post_mu, timestep_dist="logit_normal"):
     B = prior_mu.shape[0]
 
     # 时间步采样 (D-02)
-    t = sample_timestep(B, dist=timestep_dist)  # (B,)
+    device = prior_mu.device
+    t = sample_timestep(B, device=device, dist=timestep_dist)  # (B,)
 
     # OT-path 插值 (FM-01)
     t_expand = t[:, None]  # (B, 1) 广播
@@ -112,7 +114,7 @@ def get_lr_multiplier(progress, warmup_ratio=0.05, warmdown_ratio=0.3, final_lr_
 # Checkpoint 保存与加载 (FM-05, per Pitfall 4 使用 torch.save)
 # ---------------------------------------------------------------------------
 
-def save_checkpoint(dit, optimizer, step, val_loss, output_dir):
+def save_checkpoint(dit, optimizer, step, val_loss, best_val_loss, output_dir):
     """保存训练 checkpoint。
 
     Args:
@@ -120,6 +122,7 @@ def save_checkpoint(dit, optimizer, step, val_loss, output_dir):
         optimizer: 优化器
         step: 当前步数
         val_loss: 验证 loss
+        best_val_loss: 历史最优 val loss
         output_dir: 输出目录
     """
     os.makedirs(output_dir, exist_ok=True)
@@ -129,6 +132,7 @@ def save_checkpoint(dit, optimizer, step, val_loss, output_dir):
         "optimizer_state_dict": optimizer.state_dict(),
         "step": step,
         "val_loss": val_loss,
+        "best_val_loss": best_val_loss,
     }, ckpt_path)
     print(f"Saved checkpoint: {ckpt_path}")
 
@@ -141,11 +145,11 @@ def load_checkpoint(dit, path, device="cuda"):
         path: checkpoint 路径
         device: 设备
     Returns:
-        (step, val_loss, ckpt_dict) — ckpt_dict 包含 optimizer_state_dict 等
+        (step, val_loss, best_val_loss, ckpt_dict) — ckpt_dict 包含 optimizer_state_dict 等
     """
     ckpt = torch.load(path, map_location=device)
     dit.load_state_dict(ckpt["model_state_dict"])
-    return ckpt.get("step", 0), ckpt.get("val_loss", float("inf")), ckpt
+    return ckpt.get("step", 0), ckpt.get("val_loss", float("inf")), ckpt.get("best_val_loss", float("inf")), ckpt
 
 
 # ---------------------------------------------------------------------------
@@ -239,10 +243,9 @@ def main():
     if is_master:
         print(f"DiT: {sum(p.numel() for p in dit.parameters()):,} params")
 
-    # DDP 包裹
+    # DDP 包裹（所有参数每次 forward 都使用，无需 find_unused_parameters）
     if ddp:
-        dit = DDP(dit, device_ids=[local_rank], output_device=local_rank,
-                  find_unused_parameters=True)
+        dit = DDP(dit, device_ids=[local_rank], output_device=local_rank)
 
     # 优化器 (D-03)
     optimizer = torch.optim.AdamW(
@@ -255,12 +258,13 @@ def main():
     # Resume
     start_step = 0
     val_loss = float("nan")
+    best_val_loss = float("inf")
     if args.resume:
-        step, val_loss, ckpt = load_checkpoint(dit_raw, args.resume, device=device)
+        step, val_loss, best_val_loss, ckpt = load_checkpoint(dit_raw, args.resume, device=device)
         optimizer.load_state_dict(ckpt["optimizer_state_dict"])
         start_step = step + 1
         if is_master:
-            print(f"Resumed from step {step}, val_loss={val_loss:.6f}")
+            print(f"Resumed from step {step}, val_loss={val_loss:.6f}, best_val_loss={best_val_loss:.6f}")
 
     # 数据加载（共享同一个 loader，因为 CVAE 冻结后每次生成的数据统计上等价）
     loader = create_latent_dataloader(
@@ -304,13 +308,19 @@ def main():
             val_loss = evaluate(dit_raw, data_iter, args.eval_steps)
             if is_master:
                 print(f"Step {step:05d} | Val FM loss: {val_loss:.6f}")
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    best_path = os.path.join(args.output_dir, "fm_best.pt")
+                    os.makedirs(args.output_dir, exist_ok=True)
+                    torch.save(dit_raw.state_dict(), best_path)
+                    print(f"New best val loss: {best_val_loss:.6f} -> {best_path}")
             if ddp:
                 dist.barrier()
 
         # --- Save (master only，然后 barrier) ---
         do_save = last_step or (args.save_every > 0 and step > 0 and step % args.save_every == 0)
         if is_master and do_save:
-            save_checkpoint(dit_raw, optimizer, step, val_loss,
+            save_checkpoint(dit_raw, optimizer, step, val_loss, best_val_loss,
                             os.path.join(args.output_dir, "run"))
         if ddp and do_save:
             dist.barrier()

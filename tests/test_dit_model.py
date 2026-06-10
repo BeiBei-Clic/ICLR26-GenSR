@@ -1,8 +1,6 @@
 """GenSR DiT 模型前向传播 shape 验证测试"""
 
 import torch
-import sys
-sys.path.insert(0, ".")
 
 
 def count_parameters(model):
