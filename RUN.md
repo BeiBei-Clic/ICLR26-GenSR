@@ -244,6 +244,23 @@ python dit_train/finetune_lm_head.py \
 | `dit_num_steps` | 16 | DiT Euler 积分步数 |
 | `log_every` | 50 | 训练 loss 日志间隔（也是验证间隔） |
 
+多卡训练（单机多卡，DDP）：
+
+```bash
+torchrun --nproc_per_node=4 --master_port=29500 dit_train/finetune_lm_head.py \
+  --num-iterations 500 \
+  --batch-size 8 \
+  --learning-rate 1e-4 \
+  --dit-checkpoint dit_train/checkpoints/fm_best.pt \
+  --vae-checkpoint weights/checkpoint.pth \
+  --dit-num-steps 16 \
+  --log-every 50
+```
+
+> - `--nproc_per_node=4` 表示使用 4 张 GPU，根据实际 GPU 数量修改
+> - 验证循环和权重保存只在 rank 0 执行，其他 rank 通过 barrier 同步
+> - 最优权重保存到 `dit_train/checkpoints/lm_head_best.pt`
+
 快速验证（100 步）：
 
 ```bash
