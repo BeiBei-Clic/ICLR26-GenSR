@@ -266,9 +266,11 @@ def main():
         if is_master:
             print(f"Resumed from step {step}, val_loss={val_loss:.6f}, best_val_loss={best_val_loss:.6f}")
 
-    # 数据加载（共享同一个 loader，因为 CVAE 冻结后每次生成的数据统计上等价）
+    # 数据加载（spawn 多 worker 并行生成数据，每个 worker 独立持有冻结 CVAE）
     loader = create_latent_dataloader(
         params, batch_size=args.device_batch_size,
+        num_workers=2,
+        device=device,
         checkpoint_path=args.checkpoint_path,
     )
     data_iter = iter(loader)
@@ -286,8 +288,7 @@ def main():
         # 训练必须在 eval 之前，确保 DDP 的首次 forward 是训练而非 eval
         for micro_step in range(args.grad_accum_steps):
             prior_mu, post_mu = next(data_iter)
-            prior_mu = prior_mu.to(device)
-            post_mu = post_mu.to(device)
+            # spawn worker 生成的数据已在 GPU 上，无需 .to(device)
             loss, train_loss = flow_matching_step(dit, prior_mu, post_mu, args.timestep_dist)
             (loss / args.grad_accum_steps).backward()  # per Pitfall 5
 

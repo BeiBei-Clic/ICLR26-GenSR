@@ -57,7 +57,7 @@ python dit_train/train_fm.py \
 ```bash
 torchrun --nproc_per_node=4 --master_port=29500 dit_train/train_fm.py \
   --num-iterations 100000 \
-  --device-batch-size 4 \
+  --device-batch-size 20 \
   --grad-accum-steps 8 \
   --learning-rate 1e-4 \
   --output-dir dit_train/checkpoints \

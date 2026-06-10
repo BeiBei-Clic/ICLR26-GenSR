@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: phase_complete
-stopped_at: Phase 07 complete
-last_updated: "2026-06-09T15:30:00.000Z"
-last_activity: 2026-06-09
+status: verifying
+stopped_at: Completed 09-01-PLAN.md
+last_updated: "2026-06-10T04:55:31.171Z"
+last_activity: 2026-06-10
 progress:
-  total_phases: 8
-  completed_phases: 7
-  total_plans: 7
-  completed_plans: 7
-  percent: 75
+  total_phases: 9
+  completed_phases: 8
+  total_plans: 8
+  completed_plans: 8
+  percent: 87
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-09)
 
 **Core value:** 用 DiT Flow Matching 替换 CMA-ES，将符号回归推理从迭代进化搜索变为单次前向传输
-**Current focus:** Phase 06 — pipeline
+**Current focus:** Phase 09 — latentpairdataset
 
 ## Current Position
 
-Phase: 07 (eval) — COMPLETE
-Plan: 1 of 1
-Status: Verified and complete
-Last activity: 2026-06-09
+Phase: 09
+Plan: Not started
+Status: Phase complete — ready for verification
+Last activity: 2026-06-10
 
 Progress: [████████░░] 87%
 
@@ -59,6 +59,7 @@ Progress: [████████░░] 87%
 | Phase 05-euler P01 | 3min | 1 tasks | 2 files |
 | Phase 06 P01 | 2min | 1 tasks | 2 files |
 | Phase 07-eval P01 | 13min | 2 tasks | 1 files |
+| Phase 09 P01 | 3min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -66,6 +67,14 @@ Progress: [████████░░] 87%
 
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
+
+- [Phase 09]: spawn 模式替代 fork: fork 在主进程已初始化 CUDA 后不可用，spawn 是唯一可行方案
+- [Phase 09]: num_workers=2 默认值: RTX 3090 上每个 worker 额外 641MB 显存，2 worker 总额外 1.3GB 安全
+- [Phase 09]: yield 完整 batch 跳过 DataLoader collate: Dataset 内部组装 batch，DataLoader batch_size=None 透传
+
+### Roadmap Evolution
+
+- Phase 9 added: 优化 LatentPairDataset 数据生成性能
 
 - [Roadmap]: 5 个粗阶段拆分为 8 个细阶段（fine 粒度），DATA 拆为提取+验证，INF 拆为推理核心+端到端管线，EVAL 拆为实验+日志
 - [Phase 01]: 使用 --max_input_dimension 10 匹配 checkpoint 模型结构
@@ -90,6 +99,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-09T15:16:54.350Z
-Stopped at: Completed 07-01-PLAN.md
+Last session: 2026-06-10T04:49:56.872Z
+Stopped at: Completed 09-01-PLAN.md
 Resume file: None

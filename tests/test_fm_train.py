@@ -26,11 +26,11 @@ SMALL_CONFIG = {
 # ---------------------------------------------------------------------------
 
 def test_sample_timestep():
-    ts = sample_timestep(16, "logit_normal")
+    ts = sample_timestep(16, device="cpu", dist="logit_normal")
     assert ts.shape == (16,)
     assert (ts > 0).all() and (ts < 1).all()
 
-    ts_u = sample_timestep(16, "uniform")
+    ts_u = sample_timestep(16, device="cpu", dist="uniform")
     assert ts_u.shape == (16,)
     assert (ts_u >= 0).all() and (ts_u <= 1).all()
 
@@ -114,7 +114,7 @@ def test_checkpoint_save_load(tmp_path):
 
     # 保存
     output_dir = str(tmp_path / "ckpts")
-    save_checkpoint(dit, optimizer, step=100, val_loss=0.5, output_dir=output_dir)
+    save_checkpoint(dit, optimizer, step=100, val_loss=0.5, best_val_loss=0.3, output_dir=output_dir)
 
     # 验证文件存在
     ckpt_path = os.path.join(output_dir, "fm_step_000100.pt")
@@ -122,10 +122,11 @@ def test_checkpoint_save_load(tmp_path):
 
     # 加载到新模型
     dit2 = GenSRDiT(SMALL_CONFIG).cuda()
-    step, val_loss, ckpt = load_checkpoint(dit2, ckpt_path)
+    step, val_loss, best_val_loss, ckpt = load_checkpoint(dit2, ckpt_path)
 
     assert step == 100
     assert val_loss == 0.5
+    assert best_val_loss == 0.3
     assert "optimizer_state_dict" in ckpt
 
     # 验证 state_dict 一致

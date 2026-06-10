@@ -145,3 +145,18 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
 | 6. 端到端推理管线 | 1/1 | Complete | 2026-06-09 |
 | 7. 评估对比实验 | 1/1 | Complete | 2026-06-09 |
 | 8. 结果记录与分析 | 0/1 | Not started | - |
+
+### Phase 9: 优化 LatentPairDataset 数据生成性能
+
+**Goal:** 用 spawn 多进程 DataLoader 并行生成数据，消除 GPU 训练时的数据供给瓶颈，将数据生成吞吐量从 ~15 samples/s 提升到 >100 samples/s
+**Requirements**: PERF-01, PERF-02, PERF-03
+**Depends on:** Phase 1 (LatentPairDataset 已存在)
+**Success Criteria** (what must be TRUE):
+  1. DataLoader spawn 模式能启动多个 worker 并行生成数据，不报 CUDA 错误
+  2. 每个 worker 内部延迟初始化 CVAE 模型到 GPU，独立 CUDA context
+  3. Dataset yield 完整 batch (B,512) 张量对，跳过 DataLoader collate
+  4. 训练循环取到的数据已在 GPU 上，无需 .to(device)
+**Plans:** 1/1 plans complete
+
+Plans:
+- [x] 09-01-PLAN.md — 重写 LatentPairDataset spawn 多进程 + yield batch + 适配训练循环 + 更新测试
