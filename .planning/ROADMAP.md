@@ -160,3 +160,17 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
 
 Plans:
 - [x] 09-01-PLAN.md — 重写 LatentPairDataset spawn 多进程 + yield batch + 适配训练循环 + 更新测试
+
+### Phase 10: Decoder lm_head 微调
+
+**Goal:** 冻结已训练好的 CVAE + DiT，只微调 Decoder 的 lm_head 输出投影层，让 Decoder 适应 DiT 传输后的潜向量分布，提升表达式解码质量
+**Requirements**: DECODE-FT-01, DECODE-FT-02, DECODE-FT-03
+**Depends on:** Phase 9
+**Success Criteria** (what must be TRUE):
+  1. 冻结策略正确：只有 lm_head 的 weight 和 bias 可训练，其他所有参数冻结
+  2. 完整链路 CVAE -> DiT Euler -> FeatureFusion -> Decoder teacher-forcing CE loss 计算正确
+  3. 训练 100 步 loss 下降，lm_head checkpoint 保存并可加载
+**Plans:** 1/1 plans complete
+
+Plans:
+- [x] 10-01-PLAN.md — Decoder lm_head 微调训练脚本 + 冻结策略测试 + 试运行验证

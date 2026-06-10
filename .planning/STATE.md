@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: verifying
-stopped_at: Completed 09-01-PLAN.md
-last_updated: "2026-06-10T04:55:31.171Z"
+stopped_at: Completed 10-01-PLAN.md
+last_updated: "2026-06-10T11:44:48.529Z"
 last_activity: 2026-06-10
 progress:
-  total_phases: 9
-  completed_phases: 8
-  total_plans: 8
-  completed_plans: 8
+  total_phases: 10
+  completed_phases: 9
+  total_plans: 9
+  completed_plans: 9
   percent: 87
 ---
 
@@ -21,11 +21,11 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-09)
 
 **Core value:** 用 DiT Flow Matching 替换 CMA-ES，将符号回归推理从迭代进化搜索变为单次前向传输
-**Current focus:** Phase 09 — latentpairdataset
+**Current focus:** Phase 10 — dit-vae-cola-dlm-dit-vae
 
 ## Current Position
 
-Phase: 09
+Phase: 10
 Plan: Not started
 Status: Phase complete — ready for verification
 Last activity: 2026-06-10
@@ -60,6 +60,7 @@ Progress: [████████░░] 87%
 | Phase 06 P01 | 2min | 1 tasks | 2 files |
 | Phase 07-eval P01 | 13min | 2 tasks | 1 files |
 | Phase 09 P01 | 3min | 2 tasks | 3 files |
+| Phase 10 P01 | 8min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -71,9 +72,12 @@ Recent decisions affecting current work:
 - [Phase 09]: spawn 模式替代 fork: fork 在主进程已初始化 CUDA 后不可用，spawn 是唯一可行方案
 - [Phase 09]: num_workers=2 默认值: RTX 3090 上每个 worker 额外 641MB 显存，2 worker 总额外 1.3GB 安全
 - [Phase 09]: yield 完整 batch 跳过 DataLoader collate: Dataset 内部组装 batch，DataLoader batch_size=None 透传
+- [Phase 10]: lm_head.weight 与 tok_embed.weight 权重共享 (share_inout_emb=True)，解冻 lm_head 时 tok_embed 也变为可训练
+- [Phase 10]: 逐样本 teacher-forcing CE loss 然后平均，因为方程长度不同无法直接 batch
 
 ### Roadmap Evolution
 
+- Phase 10 added: 联合训练 DiT 与 VAE：参考 Cola-DLM 微调方法，将解码器交叉熵损失纳入训练，实现 DiT 与 VAE 联合端到端训练
 - Phase 9 added: 优化 LatentPairDataset 数据生成性能
 
 - [Roadmap]: 5 个粗阶段拆分为 8 个细阶段（fine 粒度），DATA 拆为提取+验证，INF 拆为推理核心+端到端管线，EVAL 拆为实验+日志
@@ -99,6 +103,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-10T04:49:56.872Z
-Stopped at: Completed 09-01-PLAN.md
+Last session: 2026-06-10T11:39:28.396Z
+Stopped at: Completed 10-01-PLAN.md
 Resume file: None
