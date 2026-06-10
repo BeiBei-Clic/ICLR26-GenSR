@@ -174,3 +174,17 @@ Plans:
 
 Plans:
 - [x] 10-01-PLAN.md — Decoder lm_head 微调训练脚本 + 冻结策略测试 + 试运行验证
+
+### Phase 11: Decoder lm_head 微调验证循环：每隔一定步数在验证集上评估，保存最优权重
+
+**Goal:** 给 finetune_lm_head.py 添加验证循环：每 50 步用 gen_expr(train=False) 生成验证数据计算 CE loss，跟踪 best_val_loss 并自动保存最优权重
+**Requirements**: REQ-11-01, REQ-11-02, REQ-11-03
+**Depends on:** Phase 10
+**Success Criteria** (what must be TRUE):
+  1. 每 50 步在验证集 (train=False) 上计算 CE loss 并打印
+  2. best_val_loss 跟踪，val loss 改善时自动保存 lm_head_best.pt
+  3. 100 步试运行验证循环正常工作
+**Plans:** 1/1 plans complete
+
+Plans:
+- [x] 11-01-PLAN.md — 添加验证循环到 finetune_lm_head.py + 试运行验证

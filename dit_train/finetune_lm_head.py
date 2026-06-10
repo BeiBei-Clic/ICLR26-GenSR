@@ -21,7 +21,6 @@ if _ROOT not in sys.path:
 
 import numpy as np
 import torch
-from tqdm import tqdm
 
 
 def main():
@@ -110,7 +109,7 @@ def main():
     print(f"dit_num_steps: {args.dit_num_steps}")
     print()
 
-    best_loss = float("inf")
+    best_val_loss = float("inf")
     os.makedirs(args.output_dir, exist_ok=True)
 
     for step in range(args.num_iterations):
@@ -197,17 +196,90 @@ def main():
 
         dt = time.time() - t0
 
-        # 保存 best checkpoint
+        # --- 验证循环 (每 50 步) ---
+        if (step + 1) % 50 == 0:
+            decoder.eval()
+            with torch.no_grad():
+                val_src_enc_list = []
+                val_x2_list = []
+                val_len2_list = []
+                for _ in range(args.batch_size):
+                    samples, _ = env.gen_expr(train=False)
+
+                    x_to_fit = samples["X_to_fit"]
+                    y_to_fit = samples["Y_to_fit"]
+                    x1 = [[[x, y] for x, y in zip(xs, ys)]
+                           for xs, ys in zip(x_to_fit, y_to_fit)]
+                    x1_single, len1_single = embedder_f(x1)
+
+                    x2_single, len2_single = env.batch_equations(
+                        env.word_to_idx([samples["tree_encoded"]], float_input=False)
+                    )
+                    x2_single, len2_single = to_cuda(x2_single, len2_single)
+                    x2_e_single = embedder_e(x2_single.transpose(0, 1)).transpose(0, 1)
+
+                    prior_mu, prior_logvar, _, _, _, _, _ = vae_model(
+                        x1_single, x2_e_single, len1_single, len2_single, mode="train"
+                    )
+                    z_opt = euler_inference(dit, prior_mu, num_steps=args.dit_num_steps)
+                    src_enc = feature_fusion(z_opt, prior_logvar)
+
+                    val_src_enc_list.append(src_enc)
+                    val_x2_list.append(x2_single)
+                    val_len2_list.append(len2_single)
+
+                val_total_loss = 0.0
+                val_count = 0
+                for i in range(args.batch_size):
+                    src_enc = val_src_enc_list[i]
+                    eq_tokens = val_x2_list[i]
+                    eq_len = val_len2_list[i]
+
+                    alen = torch.arange(params.max_src_len, dtype=torch.long, device=device)
+                    pred_mask = (alen[:, None] < eq_len[None] - 1)
+                    y = eq_tokens[1:].masked_select(pred_mask[:-1])
+
+                    if y.numel() == 0:
+                        continue
+
+                    tensor = decoder(
+                        "fwd",
+                        x=eq_tokens,
+                        lengths=eq_len,
+                        causal=True,
+                        src_enc=src_enc,
+                        src_len=None,
+                        use_cache=False,
+                    )
+                    scores, loss = decoder(
+                        "predict",
+                        tensor=tensor,
+                        pred_mask=pred_mask,
+                        y=y,
+                        get_scores=True,
+                    )
+                    val_total_loss += loss.item()
+                    val_count += 1
+
+            decoder.train()
+
+            if val_count == 0:
+                continue
+
+            val_loss = val_total_loss / val_count
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                save_path = os.path.join(args.output_dir, "lm_head_best.pt")
+                torch.save(decoder.lm_head.state_dict(), save_path)
+                print(f"  New best val loss: {best_val_loss:.4f} -> {save_path}")
+
+            print(f"  val_loss: {val_loss:.4f} | best_val: {best_val_loss:.4f}")
+
         loss_val = avg_loss.item()
-        if loss_val < best_loss:
-            best_loss = loss_val
-            save_path = os.path.join(args.output_dir, "lm_head_best.pt")
-            torch.save(decoder.lm_head.state_dict(), save_path)
-
         if step % args.log_every == 0 or step == args.num_iterations - 1:
-            print(f"step {step:04d} | loss: {loss_val:.4f} | best: {best_loss:.4f} | dt: {dt*1000:.0f}ms")
+            print(f"step {step:04d} | loss: {loss_val:.4f} | best_val: {best_val_loss:.4f} | dt: {dt*1000:.0f}ms")
 
-    print(f"\nTraining complete. Best loss: {best_loss:.4f}")
+    print(f"\nTraining complete. Best val loss: {best_val_loss:.4f}")
     print(f"Saved best lm_head to: {os.path.join(args.output_dir, 'lm_head_best.pt')}")
 
 

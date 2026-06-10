@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: verifying
-stopped_at: Completed 10-01-PLAN.md
-last_updated: "2026-06-10T11:44:48.529Z"
+stopped_at: Completed 11-01-PLAN.md
+last_updated: "2026-06-10T12:32:08.210Z"
 last_activity: 2026-06-10
 progress:
-  total_phases: 10
-  completed_phases: 9
-  total_plans: 9
-  completed_plans: 9
+  total_phases: 11
+  completed_phases: 10
+  total_plans: 10
+  completed_plans: 10
   percent: 87
 ---
 
@@ -21,11 +21,11 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-09)
 
 **Core value:** 用 DiT Flow Matching 替换 CMA-ES，将符号回归推理从迭代进化搜索变为单次前向传输
-**Current focus:** Phase 10 — dit-vae-cola-dlm-dit-vae
+**Current focus:** Phase 11 — decoder-lm-head
 
 ## Current Position
 
-Phase: 10
+Phase: 11
 Plan: Not started
 Status: Phase complete — ready for verification
 Last activity: 2026-06-10
@@ -61,6 +61,7 @@ Progress: [████████░░] 87%
 | Phase 07-eval P01 | 13min | 2 tasks | 1 files |
 | Phase 09 P01 | 3min | 2 tasks | 3 files |
 | Phase 10 P01 | 8min | 2 tasks | 2 files |
+| Phase 11 P01 | 4min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -74,9 +75,11 @@ Recent decisions affecting current work:
 - [Phase 09]: yield 完整 batch 跳过 DataLoader collate: Dataset 内部组装 batch，DataLoader batch_size=None 透传
 - [Phase 10]: lm_head.weight 与 tok_embed.weight 权重共享 (share_inout_emb=True)，解冻 lm_head 时 tok_embed 也变为可训练
 - [Phase 10]: 逐样本 teacher-forcing CE loss 然后平均，因为方程长度不同无法直接 batch
+- [Phase 11]: 验证循环内联在训练循环中，每 50 步用 gen_expr(train=False) 独立验证，best_val_loss 跟踪保存最优权重
 
 ### Roadmap Evolution
 
+- Phase 11 added: Decoder lm_head 微调验证循环：每隔一定步数在验证集上评估，保存最优权重
 - Phase 10 added: 联合训练 DiT 与 VAE：参考 Cola-DLM 微调方法，将解码器交叉熵损失纳入训练，实现 DiT 与 VAE 联合端到端训练
 - Phase 9 added: 优化 LatentPairDataset 数据生成性能
 
@@ -103,6 +106,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-10T11:39:28.396Z
-Stopped at: Completed 10-01-PLAN.md
+Last session: 2026-06-10T12:28:23.228Z
+Stopped at: Completed 11-01-PLAN.md
 Resume file: None
