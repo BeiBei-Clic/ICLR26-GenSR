@@ -136,6 +136,8 @@ def main():
     best_val_loss = float("inf")
     os.makedirs(args.output_dir, exist_ok=True)
 
+    alen = torch.arange(params.max_src_len, dtype=torch.long, device=device)
+
     for step in range(args.num_iterations):
         t0 = time.time()
 
@@ -183,7 +185,6 @@ def main():
             eq_tokens = x2_list[i]     # (slen, 1)
             eq_len = len2_list[i]      # (1,)
 
-            alen = torch.arange(params.max_src_len, dtype=torch.long, device=device)
             pred_mask = (alen[:, None] < eq_len[None] - 1)
             y = eq_tokens[1:].masked_select(pred_mask[:-1])
 
@@ -288,9 +289,7 @@ def main():
 
                 decoder.train()
 
-                if val_count == 0:
-                    pass  # 验证无有效样本，跳过但不 continue（需要 barrier）
-                else:
+                if val_count > 0:
                     val_loss = val_total_loss / val_count
                     if val_loss < best_val_loss:
                         best_val_loss = val_loss
