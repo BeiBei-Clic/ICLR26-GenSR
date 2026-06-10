@@ -21,6 +21,8 @@ if _ROOT not in sys.path:
 
 import numpy as np
 import torch
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 
 def main():
@@ -36,11 +38,25 @@ def main():
     parser.add_argument("--log-every", type=int, default=50)
     args = parser.parse_args()
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    # ---- DDP 初始化 ----
+    ddp = "RANK" in os.environ or "LOCAL_RANK" in os.environ
+    if ddp:
+        dist.init_process_group(backend="nccl")
+        local_rank = int(os.environ.get("LOCAL_RANK", 0))
+        torch.cuda.set_device(local_rank)
+        rank = dist.get_rank()
+        world_size = dist.get_world_size()
+    else:
+        local_rank = 0
+        rank = 0
+        world_size = 1
+
+    is_master = rank == 0
+    device = f"cuda:{local_rank}"
 
     # ========== 1. 初始化 env + modules ==========
     import symbolicregression.utils
-    symbolicregression.utils.CUDA = device == "cuda"
+    symbolicregression.utils.CUDA = device.startswith("cuda")
 
     from parsers import get_parser
     params = get_parser().parse_args([])
@@ -95,19 +111,27 @@ def main():
 
     total_params = sum(p.numel() for p in decoder.parameters())
     trainable_params = sum(p.numel() for p in decoder.parameters() if p.requires_grad)
-    print(f"Decoder: {total_params:,} total, {trainable_params:,} trainable ({100*trainable_params/total_params:.2f}%)")
+    if is_master:
+        print(f"Decoder: {total_params:,} total, {trainable_params:,} trainable ({100*trainable_params/total_params:.2f}%)")
+
+    # DDP 包装 lm_head（只包装 lm_head，不包装整个 decoder）
+    lm_head_raw = decoder.lm_head
+    if ddp:
+        decoder.lm_head = DDP(decoder.lm_head, device_ids=[local_rank], output_device=local_rank)
 
     # ========== 4. Optimizer (D-03, 照搬 cola_vae_finetune.py) ==========
     optimizer = torch.optim.AdamW(
-        [p for p in decoder.parameters() if p.requires_grad],
+        decoder.lm_head.parameters(),
         lr=args.learning_rate,
     )
 
     # ========== 5. 训练循环 ==========
-    print(f"\n=== Decoder lm_head Fine-tuning ===")
-    print(f"iterations: {args.num_iterations}, batch_size: {args.batch_size}, lr: {args.learning_rate}")
-    print(f"dit_num_steps: {args.dit_num_steps}")
-    print()
+    if is_master:
+        print(f"\n=== Decoder lm_head Fine-tuning ===")
+        print(f"iterations: {args.num_iterations}, batch_size: {args.batch_size}, lr: {args.learning_rate}")
+        print(f"dit_num_steps: {args.dit_num_steps}")
+        print(f"DDP: {ddp}, world_size: {world_size}")
+        print()
 
     best_val_loss = float("inf")
     os.makedirs(args.output_dir, exist_ok=True)
@@ -196,91 +220,99 @@ def main():
 
         dt = time.time() - t0
 
-        # --- 验证循环 (每 50 步) ---
+        # --- 验证循环 (每 50 步，仅 rank 0) ---
         if (step + 1) % 50 == 0:
-            decoder.eval()
-            with torch.no_grad():
-                val_src_enc_list = []
-                val_x2_list = []
-                val_len2_list = []
-                for _ in range(args.batch_size):
-                    samples, _ = env.gen_expr(train=False)
+            if is_master:
+                decoder.eval()
+                with torch.no_grad():
+                    val_src_enc_list = []
+                    val_x2_list = []
+                    val_len2_list = []
+                    for _ in range(args.batch_size):
+                        samples, _ = env.gen_expr(train=False)
 
-                    x_to_fit = samples["X_to_fit"]
-                    y_to_fit = samples["Y_to_fit"]
-                    x1 = [[[x, y] for x, y in zip(xs, ys)]
-                           for xs, ys in zip(x_to_fit, y_to_fit)]
-                    x1_single, len1_single = embedder_f(x1)
+                        x_to_fit = samples["X_to_fit"]
+                        y_to_fit = samples["Y_to_fit"]
+                        x1 = [[[x, y] for x, y in zip(xs, ys)]
+                               for xs, ys in zip(x_to_fit, y_to_fit)]
+                        x1_single, len1_single = embedder_f(x1)
 
-                    x2_single, len2_single = env.batch_equations(
-                        env.word_to_idx([samples["tree_encoded"]], float_input=False)
-                    )
-                    x2_single, len2_single = to_cuda(x2_single, len2_single)
-                    x2_e_single = embedder_e(x2_single.transpose(0, 1)).transpose(0, 1)
+                        x2_single, len2_single = env.batch_equations(
+                            env.word_to_idx([samples["tree_encoded"]], float_input=False)
+                        )
+                        x2_single, len2_single = to_cuda(x2_single, len2_single)
+                        x2_e_single = embedder_e(x2_single.transpose(0, 1)).transpose(0, 1)
 
-                    prior_mu, prior_logvar, _, _, _, _, _ = vae_model(
-                        x1_single, x2_e_single, len1_single, len2_single, mode="train"
-                    )
-                    z_opt = euler_inference(dit, prior_mu, num_steps=args.dit_num_steps)
-                    src_enc = feature_fusion(z_opt, prior_logvar)
+                        prior_mu, prior_logvar, _, _, _, _, _ = vae_model(
+                            x1_single, x2_e_single, len1_single, len2_single, mode="train"
+                        )
+                        z_opt = euler_inference(dit, prior_mu, num_steps=args.dit_num_steps)
+                        src_enc = feature_fusion(z_opt, prior_logvar)
 
-                    val_src_enc_list.append(src_enc)
-                    val_x2_list.append(x2_single)
-                    val_len2_list.append(len2_single)
+                        val_src_enc_list.append(src_enc)
+                        val_x2_list.append(x2_single)
+                        val_len2_list.append(len2_single)
 
-                val_total_loss = 0.0
-                val_count = 0
-                for i in range(args.batch_size):
-                    src_enc = val_src_enc_list[i]
-                    eq_tokens = val_x2_list[i]
-                    eq_len = val_len2_list[i]
+                    val_total_loss = 0.0
+                    val_count = 0
+                    for i in range(args.batch_size):
+                        src_enc = val_src_enc_list[i]
+                        eq_tokens = val_x2_list[i]
+                        eq_len = val_len2_list[i]
 
-                    alen = torch.arange(params.max_src_len, dtype=torch.long, device=device)
-                    pred_mask = (alen[:, None] < eq_len[None] - 1)
-                    y = eq_tokens[1:].masked_select(pred_mask[:-1])
+                        alen = torch.arange(params.max_src_len, dtype=torch.long, device=device)
+                        pred_mask = (alen[:, None] < eq_len[None] - 1)
+                        y = eq_tokens[1:].masked_select(pred_mask[:-1])
 
-                    if y.numel() == 0:
-                        continue
+                        if y.numel() == 0:
+                            continue
 
-                    tensor = decoder(
-                        "fwd",
-                        x=eq_tokens,
-                        lengths=eq_len,
-                        causal=True,
-                        src_enc=src_enc,
-                        src_len=None,
-                        use_cache=False,
-                    )
-                    scores, loss = decoder(
-                        "predict",
-                        tensor=tensor,
-                        pred_mask=pred_mask,
-                        y=y,
-                        get_scores=True,
-                    )
-                    val_total_loss += loss.item()
-                    val_count += 1
+                        tensor = decoder(
+                            "fwd",
+                            x=eq_tokens,
+                            lengths=eq_len,
+                            causal=True,
+                            src_enc=src_enc,
+                            src_len=None,
+                            use_cache=False,
+                        )
+                        scores, loss = decoder(
+                            "predict",
+                            tensor=tensor,
+                            pred_mask=pred_mask,
+                            y=y,
+                            get_scores=True,
+                        )
+                        val_total_loss += loss.item()
+                        val_count += 1
 
-            decoder.train()
+                decoder.train()
 
-            if val_count == 0:
-                continue
+                if val_count == 0:
+                    pass  # 验证无有效样本，跳过但不 continue（需要 barrier）
+                else:
+                    val_loss = val_total_loss / val_count
+                    if val_loss < best_val_loss:
+                        best_val_loss = val_loss
+                        save_path = os.path.join(args.output_dir, "lm_head_best.pt")
+                        torch.save(lm_head_raw.state_dict(), save_path)
+                        print(f"  New best val loss: {best_val_loss:.4f} -> {save_path}")
 
-            val_loss = val_total_loss / val_count
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
-                save_path = os.path.join(args.output_dir, "lm_head_best.pt")
-                torch.save(decoder.lm_head.state_dict(), save_path)
-                print(f"  New best val loss: {best_val_loss:.4f} -> {save_path}")
+                    print(f"  val_loss: {val_loss:.4f} | best_val: {best_val_loss:.4f}")
 
-            print(f"  val_loss: {val_loss:.4f} | best_val: {best_val_loss:.4f}")
+            if ddp:
+                dist.barrier()
 
         loss_val = avg_loss.item()
-        if step % args.log_every == 0 or step == args.num_iterations - 1:
+        if is_master and (step % args.log_every == 0 or step == args.num_iterations - 1):
             print(f"step {step:04d} | loss: {loss_val:.4f} | best_val: {best_val_loss:.4f} | dt: {dt*1000:.0f}ms")
 
-    print(f"\nTraining complete. Best val loss: {best_val_loss:.4f}")
-    print(f"Saved best lm_head to: {os.path.join(args.output_dir, 'lm_head_best.pt')}")
+    if is_master:
+        print(f"\nTraining complete. Best val loss: {best_val_loss:.4f}")
+        print(f"Saved best lm_head to: {os.path.join(args.output_dir, 'lm_head_best.pt')}")
+
+    if ddp:
+        dist.destroy_process_group()
 
 
 if __name__ == "__main__":

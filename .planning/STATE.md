@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: verifying
-stopped_at: Completed 11-01-PLAN.md
-last_updated: "2026-06-10T12:32:08.210Z"
+stopped_at: Completed 12-01-PLAN.md
+last_updated: "2026-06-10T14:04:28.968Z"
 last_activity: 2026-06-10
 progress:
-  total_phases: 11
-  completed_phases: 10
-  total_plans: 10
-  completed_plans: 10
+  total_phases: 12
+  completed_phases: 11
+  total_plans: 11
+  completed_plans: 11
   percent: 87
 ---
 
@@ -21,11 +21,11 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-09)
 
 **Core value:** 用 DiT Flow Matching 替换 CMA-ES，将符号回归推理从迭代进化搜索变为单次前向传输
-**Current focus:** Phase 11 — decoder-lm-head
+**Current focus:** Phase 12 — decoder-lm-head-gpu
 
 ## Current Position
 
-Phase: 11
+Phase: 12
 Plan: Not started
 Status: Phase complete — ready for verification
 Last activity: 2026-06-10
@@ -62,6 +62,7 @@ Progress: [████████░░] 87%
 | Phase 09 P01 | 3min | 2 tasks | 3 files |
 | Phase 10 P01 | 8min | 2 tasks | 2 files |
 | Phase 11 P01 | 4min | 2 tasks | 1 files |
+| Phase 12 P01 | 3min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -76,9 +77,13 @@ Recent decisions affecting current work:
 - [Phase 10]: lm_head.weight 与 tok_embed.weight 权重共享 (share_inout_emb=True)，解冻 lm_head 时 tok_embed 也变为可训练
 - [Phase 10]: 逐样本 teacher-forcing CE loss 然后平均，因为方程长度不同无法直接 batch
 - [Phase 11]: 验证循环内联在训练循环中，每 50 步用 gen_expr(train=False) 独立验证，best_val_loss 跟踪保存最优权重
+- [Phase 12]: 只包装 lm_head 为 DDP，不包装整个 decoder（92.9% 参数冻结，find_unused_parameters 性能差）
+- [Phase 12]: 保存权重用 lm_head_raw（未包装原始引用），避免 DDP module. 前缀问题
+- [Phase 12]: 验证循环仅在 rank 0 执行 + dist.barrier() 同步其他 rank
 
 ### Roadmap Evolution
 
+- Phase 12 added: Decoder lm_head 微调多 GPU 并行训练
 - Phase 11 added: Decoder lm_head 微调验证循环：每隔一定步数在验证集上评估，保存最优权重
 - Phase 10 added: 联合训练 DiT 与 VAE：参考 Cola-DLM 微调方法，将解码器交叉熵损失纳入训练，实现 DiT 与 VAE 联合端到端训练
 - Phase 9 added: 优化 LatentPairDataset 数据生成性能
@@ -106,6 +111,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-10T12:28:23.228Z
-Stopped at: Completed 11-01-PLAN.md
+Last session: 2026-06-10T14:00:28.676Z
+Stopped at: Completed 12-01-PLAN.md
 Resume file: None

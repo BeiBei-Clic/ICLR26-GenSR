@@ -188,3 +188,17 @@ Plans:
 
 Plans:
 - [x] 11-01-PLAN.md — 添加验证循环到 finetune_lm_head.py + 试运行验证
+
+### Phase 12: Decoder lm_head 微调多 GPU 并行训练
+
+**Goal:** 将 finetune_lm_head.py 改造为支持 DDP 多卡训练，参照 train_fm.py 的 DDP 模式，只包装 lm_head 子模块，每个 GPU 独立生成数据并计算梯度，DDP 自动 all-reduce 同步
+**Requirements**: DDP-01, DDP-02
+**Depends on:** Phase 11
+**Success Criteria** (what must be TRUE):
+  1. torchrun --nproc_per_node=2 启动后 2 个 GPU 各自独立运行训练不报错
+  2. 验证循环和权重保存只在 rank 0 执行，其他 rank 跳过验证
+  3. 单卡模式 python dit_train/finetune_lm_head.py 向后兼容正常运行
+**Plans:** 1/1 plans complete
+
+Plans:
+- [x] 12-01-PLAN.md — DDP 多卡改造：DDP 初始化 + lm_head 包装 + is_master 日志控制 + rank 0 验证 + 试运行验证
