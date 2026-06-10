@@ -251,12 +251,12 @@ python dit_train/finetune_lm_head.py \
 ```bash
 torchrun --nproc_per_node=4 --master_port=29500 dit_train/finetune_lm_head.py \
   --num-iterations 500 \
-  --batch-size 8 \
+  --batch-size 80 \
   --learning-rate 1e-4 \
   --dit-checkpoint dit_train/checkpoints/fm_best.pt \
   --vae-checkpoint weights/checkpoint.pth \
   --dit-num-steps 16 \
-  --num-workers 2 \
+  --num-workers 8 \
   --log-every 50
 ```
 
