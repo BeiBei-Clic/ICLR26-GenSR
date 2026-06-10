@@ -217,3 +217,38 @@ python experiments/pmlb/dit_eval.py \
 ```bash
 python experiments/latent_space/latent_distribution.py
 ```
+
+## Decoder lm_head 微调
+
+冻结 CVAE + DiT + FeatureFusion + Decoder blocks，只解冻 lm_head 输出投影层。用 DiT 传输后的 z_opt 作为 Decoder 输入，teacher-forcing CE loss 训练。每 50 步在验证集上评估，自动保存最优权重。
+
+```bash
+python dit_train/finetune_lm_head.py \
+  --num-iterations 500 \
+  --batch-size 8 \
+  --learning-rate 1e-4 \
+  --dit-checkpoint dit_train/checkpoints/fm_best.pt \
+  --vae-checkpoint weights/checkpoint.pth \
+  --dit-num-steps 16 \
+  --log-every 50
+```
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `num_iterations` | 500 | 训练迭代数 |
+| `batch_size` | 8 | 训练/验证 batch size |
+| `learning_rate` | 1e-4 | AdamW 学习率 |
+| `dit_checkpoint` | dit_train/checkpoints/fm_best.pt | DiT FM checkpoint |
+| `vae_checkpoint` | weights/checkpoint.pth | CVAE 预训练权重 |
+| `output_dir` | dit_train/checkpoints | 最优权重保存目录 |
+| `dit_num_steps` | 16 | DiT Euler 积分步数 |
+| `log_every` | 50 | 训练 loss 日志间隔（也是验证间隔） |
+
+快速验证（100 步）：
+
+```bash
+python dit_train/finetune_lm_head.py \
+  --num-iterations 100 \
+  --batch-size 8 \
+  --log-every 10
+```
