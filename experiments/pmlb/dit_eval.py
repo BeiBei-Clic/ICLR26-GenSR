@@ -246,6 +246,14 @@ if __name__ == "__main__":
             scaler = utils_wrapper.StandardScaler()
             X_scaled_to_fit = scaler.fit_transform(x_to_fit)
 
+            # 下采样到 max_input_points，防止超过 CVAE 位置编码表上限
+            if len(X_scaled_to_fit) >= args.max_input_points:
+                import random as _rng
+                _rng.seed(args.seed)
+                idx = sorted(_rng.sample(range(len(X_scaled_to_fit)), args.max_input_points))
+                X_scaled_to_fit = X_scaled_to_fit[idx]
+                y_to_fit = y_to_fit[idx]
+
             t0 = time.time()
             result = dit_inference(
                 X_scaled_to_fit, y_to_fit, env, args, model, dit, num_steps=args.num_steps
