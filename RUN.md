@@ -182,11 +182,12 @@ python experiments/pmlb/pmlb_batch_inference.py \
 
 ## DiT 评估（PMLB 数据集）
 
-训练完成后，用 `dit_eval.py` 在全部 PMLB 回归数据集上运行 DiT 推理评估。
+训练完成后，用 `dit_eval.py` 在全部 PMLB 回归数据集上运行 DiT 推理评估。加载微调后的 lm_head 权重。
 
 ```bash
 python experiments/pmlb/dit_eval.py \
   --dit_checkpoint dit_train/checkpoints/fm_best.pt \
+  --lm_head_checkpoint dit_train/checkpoints/lm_head_best.pt \
   --model_path weights/checkpoint.pth \
   --output_csv experiments/pmlb/GenSR_dit/pmlb_dit_results.csv \
   --num_steps 16 \
@@ -196,6 +197,7 @@ python experiments/pmlb/dit_eval.py \
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
 | `dit_checkpoint` | weights/fm_best.pt | DiT checkpoint 路径 |
+| `lm_head_checkpoint` | (空) | 微调后的 lm_head 权重（空=不加载） |
 | `model_path` | weights/checkpoint.pth | CVAE 预训练权重 |
 | `output_csv` | experiments/pmlb/GenSR_dit/pmlb_dit_results.csv | 结果 CSV 路径 |
 | `num_steps` | 16 | Euler 积分步数 |
@@ -256,7 +258,7 @@ torchrun --nproc_per_node=4 --master_port=29500 dit_train/finetune_lm_head.py \
   --dit-checkpoint dit_train/checkpoints/fm_best.pt \
   --vae-checkpoint weights/checkpoint.pth \
   --dit-num-steps 16 \
-  --num-workers 8 \
+  --num-workers 6 \
   --log-every 50
 ```
 

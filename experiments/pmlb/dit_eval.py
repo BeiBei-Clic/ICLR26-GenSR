@@ -59,6 +59,8 @@ if __name__ == "__main__":
     parser.add_argument("--max_rows", type=int, default=-1)
     parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--num_steps", type=int, default=16)
+    parser.add_argument("--lm_head_checkpoint", type=str, default="",
+                        help="Path to fine-tuned lm_head checkpoint (optional)")
     args = parser.parse_args()
 
     # ---- 设备检查 ----
@@ -139,6 +141,14 @@ if __name__ == "__main__":
     dit = GenSRDiT().to(args.device)
     load_checkpoint(dit, str(dit_path), device=str(args.device))
     dit.eval()
+
+    # 加载微调后的 lm_head 权重（可选）
+    if args.lm_head_checkpoint:
+        lm_head_path = Path(args.lm_head_checkpoint).resolve()
+        assert lm_head_path.is_file(), f"lm_head checkpoint not found: {lm_head_path}"
+        decoder = modules["seq_decoder"]
+        decoder.lm_head.load_state_dict(torch.load(str(lm_head_path), map_location=args.device))
+        print(f"Loaded fine-tuned lm_head from {lm_head_path}")
 
     # ---- 数据集发现 ----
     summary_df = pd.read_csv(args.summary_tsv, sep="\t")
