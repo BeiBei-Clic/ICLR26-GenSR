@@ -137,9 +137,8 @@ if __name__ == "__main__":
 
     # 加载 DiT 模型（GenSRDiT，由 train_fm.py 训练）
     from dit_train.model import GenSRDiT
-    from dit_train.train_fm import load_checkpoint
     dit = GenSRDiT().to(args.device)
-    load_checkpoint(dit, str(dit_path), device=str(args.device))
+    dit.load_state_dict(torch.load(str(dit_path), map_location=args.device))
     dit.eval()
 
     # 加载微调后的 lm_head 权重（可选）
