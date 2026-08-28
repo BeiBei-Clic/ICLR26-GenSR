@@ -145,6 +145,12 @@ python experiments/pmlb/pmlb_batch_inference.py \
 PYTHONPATH=. .venv/bin/python experiments/pmlb/pmlb_results_summary.py --input_csvs experiments/pmlb/results/pmlb_batch_inference_noise_0.csv experiments/pmlb/results/pmlb_batch_inference_noise_0.1.csv experiments/pmlb/results/pmlb_batch_inference_noise_0.01.csv experiments/pmlb/results/pmlb_batch_inference_noise_0.001.csv --output_csv experiments/pmlb/results/pmlb_results_summary.csv
 ```
 
+单独汇总 GenSR 50 代结果的 Strogatz 组，recovery_rate 阈值取 0.99。
+
+```bash
+PYTHONPATH=. .venv/bin/python experiments/pmlb/pmlb_results_summary.py --input_csvs experiments/pmlb/GenSR_results_iteration50/pmlb_batch_inference_noise_0.csv experiments/pmlb/GenSR_results_iteration50/pmlb_batch_inference_noise_0.001.csv experiments/pmlb/GenSR_results_iteration50/pmlb_batch_inference_noise_0.01.csv experiments/pmlb/GenSR_results_iteration50/pmlb_batch_inference_noise_0.1.csv --output_csv experiments/pmlb/GenSR_results_iteration50/strogatz_results_summary.csv --group_filter Strogatz --r2_threshold 0.99
+```
+
 ## Acknowledge
 
 We appreciate the following repos for their valuable code:

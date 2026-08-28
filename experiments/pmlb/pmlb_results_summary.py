@@ -30,6 +30,8 @@ if __name__ == "__main__":
         type=str,
         default="experiments/pmlb/results/pmlb_results_summary.csv",
     )
+    parser.add_argument("--r2_threshold", type=float, default=0.9, help="recovery_rate 的 r2 阈值")
+    parser.add_argument("--group_filter", type=str, default=None, help="只输出指定组，如 Strogatz")
     args = parser.parse_args()
 
     fixed_noise_strengths = ["0", "0.001", "0.01", "0.1"]
@@ -53,6 +55,12 @@ if __name__ == "__main__":
             path = Path(f"experiments/pmlb/results/pmlb_batch_inference_noise_{noise_strength}.csv")
             if path.is_file():
                 input_paths_by_noise[noise_strength] = path
+
+    group_names = ["Feynman", "Strogatz", "Black-box"]
+    if args.group_filter is not None:
+        if args.group_filter not in group_names:
+            raise ValueError(f"未知分组: {args.group_filter}，可选值: {group_names}")
+        group_names = [args.group_filter]
 
     rows = []
     for noise_strength in fixed_noise_strengths:
@@ -99,7 +107,7 @@ if __name__ == "__main__":
             }
         )
 
-        for group_name in ["Feynman", "Strogatz", "Black-box"]:
+        for group_name in group_names:
             group_df = grouped_df[grouped_df["group"] == group_name]
 
             valid_r2 = group_df.loc[group_df["r2_valid_mask"], "clipped_r2"]
@@ -114,7 +122,7 @@ if __name__ == "__main__":
                     "r2_std": float(valid_r2.std(ddof=0)) if len(valid_r2) else np.nan,
                     "r2_valid_count": int(group_df["r2_valid_mask"].sum()),
                     "total_count": int(len(group_df)),
-                    "recovery_rate": float((valid_r2 > 0.9).sum() / len(valid_r2)) if len(valid_r2) else np.nan,
+                    "recovery_rate": float((valid_r2 > args.r2_threshold).sum() / len(valid_r2)) if len(valid_r2) else np.nan,
                     "complexity_mean": float(valid_complexity.mean()) if len(valid_complexity) else np.nan,
                     "complexity_std": float(valid_complexity.std(ddof=0)) if len(valid_complexity) else np.nan,
                     "complexity_count": int(len(valid_complexity)),
